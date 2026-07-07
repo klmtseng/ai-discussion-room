@@ -4,11 +4,14 @@ No real CLI calls — all adapters mocked.
 Run: python3 -m pytest tests/ -v
   or: python3 -m unittest discover tests -v
 """
+import io
+import json
 import os
 import sys
 import threading
 import unittest
-from unittest.mock import patch, call
+from http.server import BaseHTTPRequestHandler
+from unittest.mock import patch, call, MagicMock
 
 # Allow imports from project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,6 +19,28 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import anonymizer
 import adapters
 import parliament
+
+
+# ── PIN auth helpers ──────────────────────────────────────────────────────────
+
+def _make_handler_with_headers(headers_dict: dict) -> "_Handler":
+    """Build a minimal _Handler-like object with mock headers for PIN testing."""
+    import server as srv
+
+    class _FakeRequest:
+        def makefile(self, *a, **k):
+            return io.BytesIO(b"")
+
+    class _FakeHandler(srv._Handler):
+        def __init__(self):
+            # Don't call super().__init__ — we just need headers
+            self.headers = headers_dict
+            self._sent = []
+
+        def _send_json(self, code, data):
+            self._sent.append((code, data))
+
+    return _FakeHandler()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -307,6 +332,160 @@ class TestFollowup(unittest.TestCase):
         self.assertIn("追問回答", followup["response"])
         # Conversation should have grown
         self.assertGreater(len(session["members"][label]["conversation"]), 2)
+
+
+# ── PIN auth tests ───────────────────────────────────────────────────────────
+
+class TestPinAuth(unittest.TestCase):
+    """Test PIN authentication via _check_pin and _require_pin."""
+
+    def setUp(self):
+        import server as srv
+        self._real_pin = srv._PIN
+
+    def _handler_with(self, header_pin=None, cookie_pin=None):
+        """Return a handler whose headers contain the specified values."""
+        import server as srv
+        headers = {}
+        if header_pin is not None:
+            headers["X-Parliament-Pin"] = header_pin
+        if cookie_pin is not None:
+            headers["Cookie"] = f"parliament_pin={cookie_pin}"
+
+        class _Fake:
+            def __init__(self):
+                self.headers = headers
+                self._sent = []
+            def _send_json(self_inner, code, data):
+                self_inner._sent.append((code, data))
+
+        return _Fake()
+
+    def test_correct_header_pin_accepted(self):
+        import server as srv
+        h = self._handler_with(header_pin=self._real_pin)
+        result = srv._check_pin(h)
+        self.assertTrue(result)
+
+    def test_wrong_header_pin_rejected(self):
+        import server as srv
+        h = self._handler_with(header_pin="000000")
+        result = srv._check_pin(h)
+        self.assertFalse(result)
+
+    def test_correct_cookie_pin_accepted(self):
+        import server as srv
+        h = self._handler_with(cookie_pin=self._real_pin)
+        result = srv._check_pin(h)
+        self.assertTrue(result)
+
+    def test_no_pin_rejected(self):
+        import server as srv
+        h = self._handler_with()
+        result = srv._check_pin(h)
+        self.assertFalse(result)
+
+    def test_pin_is_six_digits(self):
+        import server as srv
+        self.assertRegex(srv._PIN, r"^\d{6}$")
+
+
+class TestPinEndToEnd(unittest.TestCase):
+    """Integration: start mock server, verify 401/200 with real HTTP requests."""
+
+    def setUp(self):
+        import server as srv
+        import http.server
+        import urllib.request
+        self._srv_mod = srv
+
+        # Spin up a test server on a random port
+        self._server = http.server.HTTPServer(("127.0.0.1", 0), srv._Handler)
+        self._port = self._server.socket.getsockname()[1]
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+
+    def tearDown(self):
+        self._server.shutdown()
+
+    def _get(self, path, pin=None):
+        import urllib.request, urllib.error
+        url = f"http://127.0.0.1:{self._port}{path}"
+        req = urllib.request.Request(url)
+        if pin is not None:
+            req.add_header("X-Parliament-Pin", pin)
+        try:
+            resp = urllib.request.urlopen(req)
+            raw = resp.read()
+            try:
+                return resp.status, json.loads(raw)
+            except Exception:
+                return resp.status, raw
+        except urllib.error.HTTPError as e:
+            raw = e.read()
+            try:
+                return e.code, json.loads(raw)
+            except Exception:
+                return e.code, raw
+
+    def _post(self, path, body, pin=None):
+        import urllib.request, urllib.error
+        url = f"http://127.0.0.1:{self._port}{path}"
+        data = json.dumps(body).encode()
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        if pin is not None:
+            req.add_header("X-Parliament-Pin", pin)
+        try:
+            resp = urllib.request.urlopen(req)
+            return resp.status, json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_static_index_no_pin_200(self):
+        status, _ = self._get("/")
+        self.assertEqual(status, 200)
+
+    def test_api_no_pin_returns_401(self):
+        status, body = self._get("/api/parliament/nonexistent")
+        self.assertEqual(status, 401)
+
+    def test_api_wrong_pin_returns_401(self):
+        status, body = self._get("/api/parliament/nonexistent", pin="000000")
+        self.assertEqual(status, 401)
+
+    def test_api_correct_pin_returns_404_not_401(self):
+        """With correct PIN, API returns 404 (session not found) not 401."""
+        pin = self._srv_mod._PIN
+        status, body = self._get("/api/parliament/nonexistent", pin=pin)
+        self.assertEqual(status, 404)
+
+    def test_post_without_pin_returns_401(self):
+        status, body = self._post("/api/parliament", {"question": "test"})
+        self.assertEqual(status, 401)
+
+    def test_mock_full_round_with_pin(self):
+        """POST a question, poll until done, verify members and chair_summary."""
+        pin = self._srv_mod._PIN
+
+        with patch.object(adapters, "run_adapter", return_value=(True, "測試回答")):
+            status, body = self._post("/api/parliament", {"question": "測試議題"}, pin=pin)
+            self.assertEqual(status, 202)
+            session_id = body["session_id"]
+
+            # Poll until done (mock is synchronous via threading, may need a moment)
+            import time
+            for _ in range(30):
+                s, d = self._get(f"/api/parliament/{session_id}", pin=pin)
+                if s == 200 and d.get("status") == "done" and d.get("chair_status") == "done":
+                    break
+                time.sleep(0.1)
+
+            self.assertEqual(d["status"], "done")
+            self.assertEqual(d["chair_status"], "done")
+            for label in ("A", "B", "C"):
+                self.assertEqual(d["members"][label]["status"], "done")
+            self.assertIsNotNone(d["chair_summary"])
 
 
 if __name__ == "__main__":

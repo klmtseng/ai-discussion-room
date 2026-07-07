@@ -9,10 +9,11 @@ Usage:
 """
 import json
 import os
+import random
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 # Must set mock mode BEFORE importing modules that read adapters._MOCK_MODE at import time
 if "--mock" in sys.argv:
@@ -25,6 +26,49 @@ PORT = 8930
 
 _sessions: dict = {}
 _sessions_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# PIN auth
+# ---------------------------------------------------------------------------
+
+def _load_pin() -> str:
+    """Load PIN from env PARLIAMENT_PIN, or generate and persist to runs/pin.txt."""
+    env_pin = os.environ.get("PARLIAMENT_PIN", "").strip()
+    if env_pin:
+        return env_pin
+    base = os.path.dirname(os.path.abspath(__file__))
+    runs_dir = os.path.join(base, "runs")
+    os.makedirs(runs_dir, exist_ok=True)
+    pin_path = os.path.join(runs_dir, "pin.txt")
+    if os.path.exists(pin_path):
+        with open(pin_path, encoding="utf-8") as f:
+            pin = f.read().strip()
+        if pin:
+            return pin
+    pin = f"{random.randint(0, 999999):06d}"
+    with open(pin_path, "w", encoding="utf-8") as f:
+        f.write(pin)
+    return pin
+
+_PIN: str = _load_pin()
+
+
+def _check_pin(handler: "BaseHTTPRequestHandler") -> bool:
+    """Return True if the request carries the correct PIN."""
+    # Check header X-Parliament-Pin
+    header_pin = handler.headers.get("X-Parliament-Pin", "").strip()
+    if header_pin == _PIN:
+        return True
+    # Check Cookie parliament_pin=<value>
+    cookie_header = handler.headers.get("Cookie", "")
+    for part in cookie_header.split(";"):
+        part = part.strip()
+        if part.startswith("parliament_pin="):
+            cookie_pin = part[len("parliament_pin="):].strip()
+            if cookie_pin == _PIN:
+                return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -95,34 +139,70 @@ class _Handler(BaseHTTPRequestHandler):
         with _sessions_lock:
             return _sessions.get(session_id)
 
+    def _require_pin(self) -> bool:
+        """Send 401 and return False if PIN not valid."""
+        if not _check_pin(self):
+            self._send_json(401, {"error": "PIN required", "hint": "X-Parliament-Pin header or parliament_pin cookie"})
+            return False
+        return True
+
     # -- OPTIONS (CORS pre-flight) --
 
     def do_OPTIONS(self) -> None:
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Parliament-Pin")
         self.end_headers()
 
     # -- GET --
 
     def do_GET(self) -> None:
         parts = self._parts()
+        path = urlparse(self.path).path
 
-        # Serve static UI
-        if not parts or parts == ["index.html"]:
-            base = os.path.dirname(os.path.abspath(__file__))
+        # Serve static UI files — no PIN required
+        base = os.path.dirname(os.path.abspath(__file__))
+
+        if not parts or path in ("/", "/index.html"):
             self._send_file(os.path.join(base, "static", "index.html"), "text/html; charset=utf-8")
             return
 
-        # GET /api/parliament/{id}
-        if len(parts) == 3 and parts[:2] == ["api", "parliament"]:
-            session = self._get_session(parts[2])
-            if session is None:
-                self._send_json(404, {"error": "session not found"})
+        # Static assets (vendor/, assets/)
+        if parts and parts[0] in ("vendor", "assets"):
+            # Resolve path safely
+            rel = os.path.join(*parts)
+            abs_path = os.path.normpath(os.path.join(base, "static", rel))
+            if not abs_path.startswith(os.path.join(base, "static")):
+                self.send_error(403)
                 return
-            self._send_json(200, parliament.public_view(session))
+            ext = os.path.splitext(abs_path)[1].lower()
+            mime = {
+                ".js": "application/javascript",
+                ".css": "text/css",
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".gif": "image/gif",
+                ".ico": "image/x-icon",
+                ".json": "application/json",
+                ".md": "text/plain; charset=utf-8",
+            }.get(ext, "application/octet-stream")
+            self._send_file(abs_path, mime)
             return
+
+        # API routes — PIN required
+        if parts and parts[0] == "api":
+            if not self._require_pin():
+                return
+
+            # GET /api/parliament/{id}
+            if len(parts) == 3 and parts[:2] == ["api", "parliament"]:
+                session = self._get_session(parts[2])
+                if session is None:
+                    self._send_json(404, {"error": "session not found"})
+                    return
+                self._send_json(200, parliament.public_view(session))
+                return
 
         self.send_error(404)
 
@@ -130,6 +210,11 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parts = self._parts()
+
+        # All POST routes require PIN
+        if not self._require_pin():
+            return
+
         data = self._read_json_body()
         if data is None:
             self._send_json(400, {"error": "invalid JSON body"})
@@ -205,6 +290,7 @@ class _Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     mock_tag = " [MOCK 模式]" if "--mock" in sys.argv else ""
     print(f"AI 眾議院啟動{mock_tag} → http://localhost:{PORT}")
+    print(f"PIN: {_PIN}  (存於 runs/pin.txt，或設 PARLIAMENT_PIN 環境變數)")
     server = HTTPServer(("", PORT), _Handler)
     try:
         server.serve_forever()

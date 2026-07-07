@@ -2,435 +2,381 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>AI 眾議院</title>
+<script src="/vendor/phaser.min.js"></script>
 <style>
-:root {
-  --bg:      #0d1117;
-  --surface: #161b22;
-  --card:    #1c2230;
-  --border:  #30363d;
-  --text:    #e6edf3;
-  --muted:   #8b949e;
-  --accent:  #d4a843;
-  --ca:      #58a6ff;
-  --cb:      #3fb950;
-  --cc:      #f78166;
-  --err:     #f85149;
-  --run:     #e3b341;
-}
+/* ── Reset & Base ── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+:root {
+  --warm-cream: #f5e6c8;
+  --warm-tan:   #d4a96a;
+  --warm-wood:  #8b5e3c;
+  --warm-dark:  #3d2b1f;
+  --warm-bg:    #2a1f14;
+  --accent:     #e8a030;
+  --accent2:    #c86420;
+  --text-light: #f0e0c0;
+  --text-muted: #a08060;
+  --ca:         #5baaff;
+  --cb:         #5bd45b;
+  --cc:         #ff8a5b;
+  --chair:      #ffe066;
+  --ok:         #5bd45b;
+  --err:        #ff5b5b;
+}
+html, body {
+  width: 100%; height: 100%;
+  background: var(--warm-bg);
+  overflow: hidden;
+  font-family: "Hiragino Kaku Gothic ProN", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  color: var(--text-light);
+  touch-action: none;
 }
 
-/* ── Header ── */
-header {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 0.75rem 1.5rem;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
+/* ── Game canvas wrapper ── */
+#game-wrap {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
 }
-header h1 {
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 0.05em;
-}
-header .subtitle {
-  font-size: 0.8rem;
-  color: var(--muted);
+#game-wrap canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
-/* ── Question input ── */
-.ask-bar {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 1rem 1.5rem;
-  display: flex;
-  gap: 0.75rem;
+/* ── PIN overlay ── */
+#pin-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: var(--warm-bg);
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 1.2rem;
+  padding: 2rem;
 }
-.ask-bar textarea {
-  flex: 1;
-  background: var(--card);
-  border: 1px solid var(--border);
+#pin-overlay.hidden { display: none; }
+#pin-overlay h1 {
+  font-size: 1.6rem; font-weight: 900;
+  color: var(--accent); letter-spacing: 0.1em;
+  text-shadow: 2px 2px 0 var(--warm-dark);
+}
+#pin-overlay p { color: var(--text-muted); font-size: 0.85rem; text-align: center; }
+#pin-input-row { display: flex; gap: 0.5rem; }
+#pinInput {
+  background: var(--warm-dark);
+  border: 2px solid var(--warm-tan);
   border-radius: 6px;
-  color: var(--text);
-  font-size: 0.95rem;
-  padding: 0.6rem 0.9rem;
-  resize: none;
-  height: 3rem;
-  line-height: 1.5;
+  color: var(--text-light);
+  font-size: 1.4rem;
+  letter-spacing: 0.4em;
+  padding: 0.5rem 1rem;
+  text-align: center;
+  width: 140px;
   outline: none;
-  transition: border-color .15s;
 }
-.ask-bar textarea:focus { border-color: var(--accent); }
-.ask-bar button {
+#pinInput:focus { border-color: var(--accent); }
+#pinBtn {
   background: var(--accent);
-  border: none;
-  border-radius: 6px;
-  color: #000;
+  border: none; border-radius: 6px;
+  color: var(--warm-dark); font-weight: 900;
+  font-size: 1rem; padding: 0.5rem 1.2rem;
   cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 700;
-  padding: 0 1.2rem;
-  white-space: nowrap;
-  transition: opacity .15s;
 }
-.ask-bar button:disabled { opacity: .4; cursor: default; }
-.ask-bar button:hover:not(:disabled) { opacity: .85; }
+#pinBtn:hover { background: var(--accent2); color: #fff; }
+#pin-err { color: var(--err); font-size: 0.8rem; min-height: 1em; }
 
-/* ── Main layout ── */
-main {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
+/* ── Bottom sheet ── */
+#sheet {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 500;
+  background: var(--warm-dark);
+  border-top: 3px solid var(--warm-tan);
+  border-radius: 16px 16px 0 0;
+  max-height: 70vh;
+  display: flex; flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(.32,1,.36,1);
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
 }
-.chamber {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 1.25rem 1.5rem;
-  gap: 1.25rem;
-  overflow-y: auto;
-}
+#sheet.open { transform: translateY(0); }
 
-/* ── Member cards ── */
-.members {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
+#sheet-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.8rem 1rem 0.6rem;
+  border-bottom: 1px solid var(--warm-wood);
+  flex-shrink: 0;
 }
-.member-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  min-height: 260px;
-  overflow: hidden;
-  transition: border-color .2s;
-}
-.member-card.A { border-top: 3px solid var(--ca); }
-.member-card.B { border-top: 3px solid var(--cb); }
-.member-card.C { border-top: 3px solid var(--cc); }
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.65rem 0.9rem;
-  border-bottom: 1px solid var(--border);
-}
-.card-label {
-  font-weight: 700;
-  font-size: 0.9rem;
-}
-.member-card.A .card-label { color: var(--ca); }
-.member-card.B .card-label { color: var(--cb); }
-.member-card.C .card-label { color: var(--cc); }
-
-.status-badge {
-  font-size: 0.7rem;
-  padding: 2px 7px;
-  border-radius: 99px;
-  font-weight: 600;
-}
-.status-badge.running  { background: #332d1a; color: var(--run); }
-.status-badge.done     { background: #1b2a1b; color: var(--cb); }
-.status-badge.error    { background: #2d1a1a; color: var(--err); }
-.status-badge.pending  { background: var(--surface); color: var(--muted); }
-
-.card-body {
-  flex: 1;
-  padding: 0.8rem 0.9rem;
-  font-size: 0.88rem;
-  line-height: 1.65;
-  overflow-y: auto;
-  color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.card-body .empty { color: var(--muted); font-style: italic; }
-
-.spinner {
-  display: inline-block;
-  width: 14px; height: 14px;
-  border: 2px solid var(--border);
-  border-top-color: var(--run);
-  border-radius: 50%;
-  animation: spin .8s linear infinite;
-  vertical-align: middle;
-  margin-right: 6px;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.card-footer {
-  padding: 0.55rem 0.9rem;
-  border-top: 1px solid var(--border);
-  display: flex;
-  justify-content: flex-end;
-}
-.btn-chat {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.78rem;
-  padding: 3px 10px;
-  transition: color .15s, border-color .15s;
-}
-.btn-chat:hover { color: var(--text); border-color: var(--text); }
-
-/* ── Chair section ── */
-.chair-section {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-top: 3px solid var(--accent);
-  border-radius: 10px;
-  overflow: hidden;
-}
-.chair-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.65rem 0.9rem;
-  border-bottom: 1px solid var(--border);
-}
-.chair-title {
-  font-weight: 700;
-  font-size: 0.9rem;
+#sheet-title {
+  font-weight: 900; font-size: 1rem;
   color: var(--accent);
 }
-.btn-resummarize {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.78rem;
-  padding: 3px 10px;
-  transition: color .15s;
+#sheet-close {
+  background: transparent; border: none;
+  color: var(--text-muted); font-size: 1.4rem;
+  cursor: pointer; line-height: 1; padding: 0.1rem 0.3rem;
 }
-.btn-resummarize:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
-.btn-resummarize:disabled { opacity: .4; cursor: default; }
+#sheet-close:hover { color: var(--text-light); }
 
-.chair-body {
-  padding: 0.9rem;
-  font-size: 0.88rem;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-  min-height: 100px;
-  color: var(--text);
-}
-.chair-body .empty { color: var(--muted); font-style: italic; }
-
-/* ── Side panel (followup chat) ── */
-.side-panel {
-  width: 360px;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  transform: translateX(100%);
-  transition: transform .25s ease;
-  position: relative;
-}
-.side-panel.open { transform: translateX(0); }
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
-}
-.panel-title { font-weight: 700; font-size: 0.9rem; }
-.btn-close {
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 1.2rem;
-  line-height: 1;
-}
-.btn-close:hover { color: var(--text); }
-
-.panel-history {
-  flex: 1;
-  overflow-y: auto;
+#sheet-content {
+  flex: 1; overflow-y: auto;
   padding: 0.8rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.msg {
-  font-size: 0.85rem;
-  line-height: 1.6;
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-.msg.user {
-  background: #1f2d3d;
-  align-self: flex-end;
-  max-width: 85%;
-}
-.msg.ai {
-  background: var(--card);
-  border: 1px solid var(--border);
-  align-self: flex-start;
-  max-width: 90%;
-}
-.msg-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  margin-bottom: 3px;
-  color: var(--muted);
+  display: flex; flex-direction: column; gap: 0.7rem;
 }
 
-.panel-input {
-  border-top: 1px solid var(--border);
-  padding: 0.75rem 1rem;
-  display: flex;
-  gap: 0.5rem;
+/* ── Bubble messages ── */
+.bubble {
+  max-width: 88%; padding: 0.55rem 0.85rem;
+  border-radius: 10px; font-size: 0.85rem; line-height: 1.6;
+  word-break: break-word;
 }
-.panel-input textarea {
+.bubble.user {
+  background: var(--warm-wood);
+  align-self: flex-end;
+  border-bottom-right-radius: 3px;
+}
+.bubble.ai {
+  background: #1e1410;
+  border: 1px solid var(--warm-wood);
+  align-self: flex-start;
+  border-bottom-left-radius: 3px;
+}
+.bubble-label {
+  font-size: 0.68rem; font-weight: 700; margin-bottom: 3px;
+  opacity: 0.65;
+}
+.bubble.thinking {
+  color: var(--text-muted); font-style: italic;
+  animation: blink 1.2s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ── Sheet input ── */
+#sheet-input-row {
+  display: flex; gap: 0.5rem; padding: 0.6rem 1rem 0.8rem;
+  border-top: 1px solid var(--warm-wood);
+  flex-shrink: 0;
+}
+#sheet-qa-row {
+  padding: 0.6rem 1rem 0.8rem;
+  border-top: 1px solid var(--warm-wood);
+  flex-shrink: 0;
+}
+#fuInput {
   flex: 1;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--text);
-  font-size: 0.85rem;
-  padding: 0.5rem 0.7rem;
-  resize: none;
-  height: 2.5rem;
-  outline: none;
+  background: #1e1410; border: 1px solid var(--warm-wood);
+  border-radius: 6px; color: var(--text-light);
+  font-size: 0.88rem; padding: 0.45rem 0.7rem;
+  resize: none; outline: none; height: 2.4rem;
 }
-.panel-input textarea:focus { border-color: var(--accent); }
-.panel-input button {
-  background: var(--accent);
-  border: none;
-  border-radius: 5px;
-  color: #000;
-  cursor: pointer;
-  font-size: 0.82rem;
-  font-weight: 700;
-  padding: 0 0.8rem;
+#fuInput:focus { border-color: var(--accent); }
+#fuBtn {
+  background: var(--accent); border: none; border-radius: 6px;
+  color: var(--warm-dark); font-weight: 900;
+  font-size: 0.85rem; padding: 0 0.9rem; cursor: pointer;
 }
-.panel-input button:disabled { opacity: .4; cursor: default; }
+#fuBtn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Question input sheet (chair mode) ── */
+#q-input-wrap {
+  display: flex; gap: 0.5rem;
+}
+#qInput {
+  flex: 1;
+  background: #1e1410; border: 1px solid var(--warm-wood);
+  border-radius: 6px; color: var(--text-light);
+  font-size: 0.88rem; padding: 0.45rem 0.7rem;
+  resize: none; outline: none; height: 2.4rem;
+}
+#qInput:focus { border-color: var(--accent); }
+#submitBtn {
+  background: var(--accent); border: none; border-radius: 6px;
+  color: var(--warm-dark); font-weight: 900;
+  font-size: 0.85rem; padding: 0 0.9rem; cursor: pointer;
+  white-space: nowrap;
+}
+#submitBtn:disabled { opacity: 0.4; cursor: default; }
+#resummarizeBtn {
+  background: var(--warm-wood); border: none; border-radius: 6px;
+  color: var(--text-light); font-weight: 700;
+  font-size: 0.82rem; padding: 0.35rem 0.8rem; cursor: pointer;
+  margin-top: 0.4rem;
+}
+#resummarizeBtn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── HUD ── */
+#hud {
+  position: fixed; top: 0; left: 0; right: 0;
+  pointer-events: none; z-index: 200;
+  display: flex; justify-content: space-between;
+  padding: 0.4rem 0.7rem;
+}
+.hud-badge {
+  font-size: 0.62rem; font-weight: 700; padding: 2px 6px;
+  border-radius: 4px; white-space: nowrap;
+}
+.hud-badge.running { background: #5b3a00; color: var(--accent); }
+.hud-badge.done    { background: #0a3a0a; color: var(--ok); }
+.hud-badge.error   { background: #3a0a0a; color: var(--err); }
+.hud-badge.pending { background: var(--warm-dark); color: var(--text-muted); }
+#hud-left { display: flex; gap: 0.3rem; align-items: center; }
+#hud-right { display: flex; gap: 0.3rem; align-items: center; }
+#hud-hint {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  pointer-events: none; z-index: 200;
+  text-align: center; padding: 0.3rem;
+  font-size: 0.62rem; color: var(--text-muted);
+}
+
+/* ── markdown rendered in bubbles ── */
+.bubble h1,.bubble h2,.bubble h3 { font-size:0.9rem; margin-bottom:4px; color:var(--accent); }
+.bubble p { margin-bottom:4px; }
+.bubble ul,.bubble ol { padding-left:1.2em; margin-bottom:4px; }
+.bubble strong { color:var(--warm-cream); }
+.bubble code { background:#0a0806; padding:0 3px; border-radius:3px; font-size:0.8em; }
+.bubble pre { background:#0a0806; padding:6px; border-radius:4px; overflow-x:auto; font-size:0.75em; margin:4px 0; }
+
 </style>
 </head>
 <body>
 
-<header>
+<!-- PIN Gate -->
+<div id="pin-overlay">
   <h1>⚖ AI 眾議院</h1>
-  <span class="subtitle">三家 AI 委員同步議事・主席匿名總結</span>
-</header>
-
-<div class="ask-bar">
-  <textarea id="qInput" placeholder="輸入議題，按「提交」…" rows="1"></textarea>
-  <button id="submitBtn" onclick="submitQuestion()">提交議題</button>
+  <p>請輸入 6 位 PIN 碼以進入議事廳<br>（伺服器啟動時印在終端 / runs/pin.txt）</p>
+  <div id="pin-input-row">
+    <input id="pinInput" type="password" maxlength="6" inputmode="numeric" placeholder="000000" autocomplete="off">
+    <button id="pinBtn" onclick="verifyPin()">進入</button>
+  </div>
+  <div id="pin-err"></div>
 </div>
 
-<main>
-  <div class="chamber">
-    <div class="members">
-      <div class="member-card A" id="cardA">
-        <div class="card-header">
-          <span class="card-label">委員 A</span>
-          <span class="status-badge pending" id="badgeA">待機</span>
-        </div>
-        <div class="card-body" id="bodyA"><span class="empty">尚無回答</span></div>
-        <div class="card-footer">
-          <button class="btn-chat" onclick="openPanel('A')" disabled id="chatA">深聊 ↗</button>
-        </div>
-      </div>
-      <div class="member-card B" id="cardB">
-        <div class="card-header">
-          <span class="card-label">委員 B</span>
-          <span class="status-badge pending" id="badgeB">待機</span>
-        </div>
-        <div class="card-body" id="bodyB"><span class="empty">尚無回答</span></div>
-        <div class="card-footer">
-          <button class="btn-chat" onclick="openPanel('B')" disabled id="chatB">深聊 ↗</button>
-        </div>
-      </div>
-      <div class="member-card C" id="cardC">
-        <div class="card-header">
-          <span class="card-label">委員 C</span>
-          <span class="status-badge pending" id="badgeC">待機</span>
-        </div>
-        <div class="card-body" id="bodyC"><span class="empty">尚無回答</span></div>
-        <div class="card-footer">
-          <button class="btn-chat" onclick="openPanel('C')" disabled id="chatC">深聊 ↗</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="chair-section">
-      <div class="chair-header">
-        <span class="chair-title">主席總結</span>
-        <button class="btn-resummarize" id="resummarizeBtn" onclick="resummarize()" disabled>
-          再總結
-        </button>
-      </div>
-      <div class="chair-body" id="chairBody"><span class="empty">等待委員回答後自動總結…</span></div>
-    </div>
+<!-- HUD -->
+<div id="hud">
+  <div id="hud-left">
+    <span style="font-size:0.75rem; font-weight:900; color:var(--accent); margin-right:4px;">⚖ 眾議院</span>
+    <span class="hud-badge pending" id="badgeA">A 待機</span>
+    <span class="hud-badge pending" id="badgeB">B 待機</span>
+    <span class="hud-badge pending" id="badgeC">C 待機</span>
   </div>
-
-  <div class="side-panel" id="sidePanel">
-    <div class="panel-header">
-      <span class="panel-title" id="panelTitle">深聊</span>
-      <button class="btn-close" onclick="closePanel()">✕</button>
-    </div>
-    <div class="panel-history" id="panelHistory"></div>
-    <div class="panel-input">
-      <textarea id="fuInput" placeholder="追問委員…"></textarea>
-      <button id="fuBtn" onclick="sendFollowup()">送出</button>
-    </div>
+  <div id="hud-right">
+    <span class="hud-badge pending" id="badgeChair">主席 待機</span>
   </div>
-</main>
+</div>
+<div id="hud-hint">點委員桌→深聊 ｜ 點講台→提問/總結 ｜ 點地板→移動</div>
+
+<!-- Game canvas -->
+<div id="game-wrap"></div>
+
+<!-- Bottom sheet -->
+<div id="sheet">
+  <div id="sheet-header">
+    <span id="sheet-title">委員 A</span>
+    <button id="sheet-close" onclick="closeSheet()">✕</button>
+  </div>
+  <div id="sheet-content" id="sheet-content"></div>
+  <div id="sheet-input-row" style="display:none">
+    <textarea id="fuInput" placeholder="追問…" rows="1"></textarea>
+    <button id="fuBtn" onclick="sendFollowup()">送</button>
+  </div>
+  <div id="sheet-qa-row" style="display:none">
+    <div id="q-input-wrap">
+      <textarea id="qInput" placeholder="輸入議題，Ctrl+Enter 送出…" rows="1"></textarea>
+      <button id="submitBtn" onclick="submitQuestion()">提交</button>
+    </div>
+    <button id="resummarizeBtn" onclick="resummarize()" disabled style="display:none">再總結</button>
+  </div>
+</div>
 
 <script>
-// ── State ──
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let PIN = localStorage.getItem('parliament_pin') || '';
 let sessionId = null;
 let pollTimer = null;
-let activePanel = null;
 let sessionData = null;
+let sheetMode = null; // 'member-A','member-B','member-C','chair'
+let gameScene = null; // reference to Phaser scene
 
-// ── Submit question ──
+// ═══════════════════════════════════════════════════════════════
+// PIN GATE
+// ═══════════════════════════════════════════════════════════════
+function verifyPin() {
+  const v = document.getElementById('pinInput').value.trim();
+  if (!v) return;
+  // Test by hitting a harmless API endpoint
+  fetch(`/api/parliament/___probe`, {
+    headers: { 'X-Parliament-Pin': v }
+  }).then(r => {
+    if (r.status === 401) {
+      document.getElementById('pin-err').textContent = 'PIN 錯誤，請再試一次';
+    } else {
+      // 404 = correct PIN, session not found (expected)
+      PIN = v;
+      localStorage.setItem('parliament_pin', PIN);
+      document.getElementById('pin-overlay').classList.add('hidden');
+    }
+  }).catch(() => {
+    document.getElementById('pin-err').textContent = '連線失敗，請檢查伺服器是否啟動';
+  });
+}
+
+// Auto-verify saved PIN on load
+window.addEventListener('DOMContentLoaded', () => {
+  if (PIN) {
+    fetch('/api/parliament/___probe', { headers: { 'X-Parliament-Pin': PIN } })
+      .then(r => {
+        if (r.status !== 401) {
+          document.getElementById('pin-overlay').classList.add('hidden');
+        } else {
+          PIN = '';
+          localStorage.removeItem('parliament_pin');
+        }
+      }).catch(() => {});
+  }
+  document.getElementById('pinInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') verifyPin();
+  });
+  document.getElementById('qInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submitQuestion();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// API HELPERS
+// ═══════════════════════════════════════════════════════════════
+function apiHeaders() {
+  return { 'Content-Type': 'application/json', 'X-Parliament-Pin': PIN };
+}
+async function apiGet(path) {
+  const r = await fetch(path, { headers: { 'X-Parliament-Pin': PIN } });
+  return { status: r.status, data: await r.json() };
+}
+async function apiPost(path, body) {
+  const r = await fetch(path, {
+    method: 'POST', headers: apiHeaders(),
+    body: JSON.stringify(body)
+  });
+  return { status: r.status, data: await r.json() };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SUBMIT & POLL
+// ═══════════════════════════════════════════════════════════════
 async function submitQuestion() {
   const q = document.getElementById('qInput').value.trim();
   if (!q) return;
   document.getElementById('submitBtn').disabled = true;
-  clearAll();
+  document.getElementById('resummarizeBtn').style.display = 'none';
+  sessionId = null; sessionData = null;
+  setBadge('A','pending','A 待機'); setBadge('B','pending','B 待機');
+  setBadge('C','pending','C 待機'); setBadge('Chair','pending','主席 待機');
+  if (gameScene) gameScene.resetMemberStates();
 
-  setAllBadges('running', '作答中');
-  setAllBodies('<span class="spinner"></span> 思考中…');
-
-  const res = await fetch('/api/parliament', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({question: q})
-  });
-  const d = await res.json();
-  if (!d.session_id) { alert('啟動失敗'); return; }
-  sessionId = d.session_id;
+  const { status, data } = await apiPost('/api/parliament', { question: q });
+  if (!data.session_id) { alert('啟動失敗'); document.getElementById('submitBtn').disabled=false; return; }
+  sessionId = data.session_id;
+  document.getElementById('qInput').value = '';
   startPolling();
 }
 
-// ── Polling ──
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(pollSession, 2000);
@@ -438,164 +384,662 @@ function startPolling() {
 
 async function pollSession() {
   if (!sessionId) return;
-  const res = await fetch(`/api/parliament/${sessionId}`);
-  if (!res.ok) return;
-  sessionData = await res.json();
-  renderSession(sessionData);
-
-  // Stop polling when fully done
-  if (sessionData.status === 'done' && sessionData.chair_status === 'done') {
-    clearInterval(pollTimer);
-    pollTimer = null;
+  const { status, data } = await apiGet(`/api/parliament/${sessionId}`);
+  if (status !== 200) return;
+  sessionData = data;
+  renderHud(data);
+  if (gameScene) gameScene.updateFromSession(data);
+  if (sheetMode && sheetMode.startsWith('member-')) {
+    refreshMemberSheet(sheetMode.replace('member-', ''));
+  } else if (sheetMode === 'chair') {
+    refreshChairSheet();
+  }
+  if (data.status === 'done' && data.chair_status === 'done') {
+    clearInterval(pollTimer); pollTimer = null;
     document.getElementById('submitBtn').disabled = false;
-    document.getElementById('resummarizeBtn').disabled = false;
-  }
-
-  // Refresh side panel if open
-  if (activePanel) refreshPanel(activePanel);
-}
-
-// ── Render session ──
-function renderSession(d) {
-  for (const label of ['A','B','C']) {
-    const m = d.members[label];
-    const badge = document.getElementById(`badge${label}`);
-    const body  = document.getElementById(`body${label}`);
-    const chat  = document.getElementById(`chat${label}`);
-
-    if (m.status === 'done') {
-      setBadge(badge, 'done', '✓ 完成');
-      body.textContent = m.response || '(無回應)';
-      chat.disabled = false;
-    } else if (m.status === 'error') {
-      setBadge(badge, 'error', '✗ 缺席');
-      body.innerHTML = `<span class="empty">本席缺席（${m.error || '錯誤'}）</span>`;
-    } else {
-      setBadge(badge, 'running', '作答中');
-      body.innerHTML = '<span class="spinner"></span> 思考中…';
-    }
-  }
-
-  const chairBody = document.getElementById('chairBody');
-  if (d.chair_status === 'done' && d.chair_summary) {
-    chairBody.textContent = d.chair_summary;
-  } else if (d.chair_status === 'running') {
-    chairBody.innerHTML = '<span class="spinner"></span> 主席整理中…';
-  } else if (d.chair_status === 'pending') {
-    chairBody.innerHTML = '<span class="empty">等待委員完成後自動總結…</span>';
+    const rb = document.getElementById('resummarizeBtn');
+    rb.disabled = false; rb.style.display = '';
   }
 }
 
-// ── Clear UI ──
-function clearAll() {
-  sessionId = null;
-  sessionData = null;
-  closePanel();
-  document.getElementById('resummarizeBtn').disabled = true;
-  setAllBadges('pending', '待機');
-  setAllBodies('<span class="empty">尚無回答</span>');
-  document.getElementById('chairBody').innerHTML = '<span class="empty">等待委員回答後自動總結…</span>';
-  ['chatA','chatB','chatC'].forEach(id => document.getElementById(id).disabled = true);
-}
-
-function setAllBadges(cls, text) {
-  ['A','B','C'].forEach(l => setBadge(document.getElementById(`badge${l}`), cls, text));
-}
-function setAllBodies(html) {
-  ['A','B','C'].forEach(l => { document.getElementById(`body${l}`).innerHTML = html; });
-}
-function setBadge(el, cls, text) {
-  el.className = `status-badge ${cls}`;
-  el.textContent = text;
-}
-
-// ── Side panel ──
-function openPanel(label) {
-  activePanel = label;
-  document.getElementById('panelTitle').textContent = `委員 ${label} 深聊`;
-  document.getElementById('sidePanel').classList.add('open');
-  refreshPanel(label);
-}
-
-function closePanel() {
-  activePanel = null;
-  document.getElementById('sidePanel').classList.remove('open');
-  document.getElementById('panelHistory').innerHTML = '';
-}
-
-function refreshPanel(label) {
-  if (!sessionData) return;
-  const hist = document.getElementById('panelHistory');
-  const msgs = [];
-
-  // Initial Q&A
-  const m = sessionData.members[label];
-  if (m && m.response) {
-    msgs.push({role:'user', content: sessionData.question});
-    msgs.push({role:'ai', content: m.response});
-  }
-
-  // Followups for this member
-  for (const f of (sessionData.followups || [])) {
-    if (f.member !== label) continue;
-    msgs.push({role:'user', content: f.question});
-    if (f.status === 'running') {
-      msgs.push({role:'ai', content: '…思考中', running: true});
-    } else if (f.response) {
-      msgs.push({role:'ai', content: f.response});
-    }
-  }
-
-  hist.innerHTML = msgs.map(m => {
-    const cls = m.role === 'user' ? 'user' : 'ai';
-    const labelText = m.role === 'user' ? '您' : `委員 ${label}`;
-    const body = m.running
-      ? `<span class="spinner"></span> ${m.content}`
-      : escHtml(m.content);
-    return `<div class="msg ${cls}"><div class="msg-label">${labelText}</div>${body}</div>`;
-  }).join('');
-  hist.scrollTop = hist.scrollHeight;
-
-  // Enable/disable send
-  const hasPending = (sessionData.followups || []).some(
-    f => f.member === label && f.status === 'running'
-  );
-  document.getElementById('fuBtn').disabled = hasPending;
-}
-
-async function sendFollowup() {
-  const q = document.getElementById('fuInput').value.trim();
-  if (!q || !activePanel || !sessionId) return;
-  document.getElementById('fuBtn').disabled = true;
-  document.getElementById('fuInput').value = '';
-
-  await fetch(`/api/parliament/${sessionId}/followup`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({member: activePanel, question: q})
-  });
-
-  // Start polling if not already
-  if (!pollTimer) startPolling();
-}
-
-// ── Re-summarize ──
 async function resummarize() {
   if (!sessionId) return;
   document.getElementById('resummarizeBtn').disabled = true;
-  document.getElementById('chairBody').innerHTML = '<span class="spinner"></span> 主席重新整理中…';
-  await fetch(`/api/parliament/${sessionId}/summarize`, {method:'POST'});
+  await apiPost(`/api/parliament/${sessionId}/summarize`, {});
   startPolling();
 }
 
-// ── Utils ──
-function escHtml(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// ═══════════════════════════════════════════════════════════════
+// HUD
+// ═══════════════════════════════════════════════════════════════
+function setBadge(who, cls, text) {
+  const el = document.getElementById(`badge${who}`);
+  if (!el) return;
+  el.className = `hud-badge ${cls}`;
+  el.textContent = text;
+}
+function renderHud(d) {
+  for (const label of ['A','B','C']) {
+    const m = d.members[label];
+    if (m.status === 'done')       setBadge(label, 'done',    `${label} ✓`);
+    else if (m.status === 'error') setBadge(label, 'error',   `${label} ✗`);
+    else                            setBadge(label, 'running', `${label} …`);
+  }
+  if (d.chair_status === 'done')       setBadge('Chair','done',   '主席 ✓');
+  else if (d.chair_status === 'running') setBadge('Chair','running','主席 …');
+  else                                   setBadge('Chair','pending','主席 待機');
 }
 
-// Allow Ctrl+Enter to submit
-document.getElementById('qInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submitQuestion();
+// ═══════════════════════════════════════════════════════════════
+// BOTTOM SHEET
+// ═══════════════════════════════════════════════════════════════
+const COLOR_MAP = { A: '#5baaff', B: '#5bd45b', C: '#ff8a5b', Chair: '#ffe066' };
+
+function openMemberSheet(label) {
+  sheetMode = `member-${label}`;
+  document.getElementById('sheet-title').textContent = `委員 ${label}`;
+  document.getElementById('sheet-title').style.color = COLOR_MAP[label] || '#fff';
+  document.getElementById('sheet-input-row').style.display = 'flex';
+  document.getElementById('sheet-qa-row').style.display = 'none';
+  document.getElementById('sheet').classList.add('open');
+  refreshMemberSheet(label);
+}
+
+function openChairSheet() {
+  sheetMode = 'chair';
+  document.getElementById('sheet-title').textContent = '主席講台';
+  document.getElementById('sheet-title').style.color = COLOR_MAP['Chair'];
+  document.getElementById('sheet-input-row').style.display = 'none';
+  document.getElementById('sheet-qa-row').style.display = 'block';
+  // Show resummarize only if session done
+  const rb = document.getElementById('resummarizeBtn');
+  rb.style.display = (sessionData && sessionData.status === 'done') ? '' : 'none';
+  rb.disabled = !(sessionData && sessionData.status === 'done' && sessionData.chair_status === 'done');
+  document.getElementById('sheet').classList.add('open');
+  refreshChairSheet();
+}
+
+function closeSheet() {
+  sheetMode = null;
+  document.getElementById('sheet').classList.remove('open');
+}
+
+function refreshMemberSheet(label) {
+  const content = document.getElementById('sheet-content');
+  if (!sessionData) {
+    content.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">尚無議事資料，請先提交議題。</div>';
+    return;
+  }
+  const m = sessionData.members[label];
+  const msgs = [];
+
+  if (m && m.response) {
+    msgs.push({ role:'user', text: sessionData.question });
+    msgs.push({ role:'ai', text: m.response });
+  } else if (m && m.status === 'running') {
+    msgs.push({ role:'ai', text: '…思考中', thinking: true });
+  } else if (m && m.status === 'error') {
+    msgs.push({ role:'ai', text: `本席缺席（${m.error || '錯誤'}）`, error: true });
+  } else {
+    msgs.push({ role:'ai', text: '等待議事開始…', thinking: true });
+  }
+
+  for (const f of (sessionData.followups || [])) {
+    if (f.member !== label) continue;
+    msgs.push({ role:'user', text: f.question });
+    if (f.status === 'running') msgs.push({ role:'ai', text: '…思考中', thinking: true });
+    else if (f.response) msgs.push({ role:'ai', text: f.response });
+  }
+
+  content.innerHTML = msgs.map(m => {
+    const cls = m.role === 'user' ? 'user' : 'ai';
+    const lbl = m.role === 'user' ? '您' : `委員 ${label}`;
+    const body = m.thinking
+      ? `<em class="bubble thinking">${escHtml(m.text)}</em>`
+      : mdToHtml(m.text);
+    return `<div class="bubble ${cls}"><div class="bubble-label">${lbl}</div>${body}</div>`;
+  }).join('');
+  content.scrollTop = content.scrollHeight;
+
+  const hasPending = (sessionData.followups||[]).some(f=>f.member===label && f.status==='running');
+  document.getElementById('fuBtn').disabled = hasPending || m.status !== 'done';
+}
+
+function refreshChairSheet() {
+  const content = document.getElementById('sheet-content');
+  if (!sessionData) {
+    content.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">點擊「提交議題」開始議事。</div>';
+    return;
+  }
+  let html = '';
+  if (sessionData.chair_status === 'done' && sessionData.chair_summary) {
+    html = `<div class="bubble ai"><div class="bubble-label">主席總結</div>${mdToHtml(sessionData.chair_summary)}</div>`;
+  } else if (sessionData.chair_status === 'running') {
+    html = `<div class="bubble ai thinking"><div class="bubble-label">主席</div>整理中…</div>`;
+  } else {
+    html = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">等待委員完成後自動總結…</div>`;
+  }
+  content.innerHTML = html;
+  content.scrollTop = content.scrollHeight;
+}
+
+async function sendFollowup() {
+  if (!sheetMode || !sheetMode.startsWith('member-') || !sessionId) return;
+  const label = sheetMode.replace('member-','');
+  const q = document.getElementById('fuInput').value.trim();
+  if (!q) return;
+  document.getElementById('fuBtn').disabled = true;
+  document.getElementById('fuInput').value = '';
+  await apiPost(`/api/parliament/${sessionId}/followup`, { member: label, question: q });
+  if (!pollTimer) startPolling();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════════════
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function mdToHtml(md) {
+  // Minimal markdown → HTML (no library, safe)
+  let s = escHtml(md);
+  s = s.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  s = s.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  s = s.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\n\n/g, '</p><p>');
+  s = s.replace(/\n- /g, '</p><ul><li>').replace(/<\/li>\n- /g, '</li><li>');
+  return '<p>' + s + '</p>';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PHASER 3 GAME
+// ═══════════════════════════════════════════════════════════════
+
+// Tile dimensions for Kenney packed tilemaps (no spacing)
+const TW = 16; // tile width
+const TH = 16; // tile height
+const SCALE = 3; // render scale
+
+// Room layout in tiles
+const COLS = 18;
+const ROWS = 14;
+
+// Tile indices from tilemap_town.png (12 tiles wide, 16px each)
+// Row 0 (outdoor), Row 1-2 (walls/doors), Row 3+ (interior)
+// Based on Kenney Tiny Town visual layout:
+const T = {
+  FLOOR_WOOD: 84,   // warm wood floor (~row 7, col 0 = 84)
+  FLOOR_CARPET: 85, // carpet
+  FLOOR_DARK: 96,   // darker floor
+  WALL_H: 12,       // horizontal wall
+  WALL_V: 24,       // vertical wall
+  CORNER_TL: 13,
+  CORNER_TR: 14,
+  CORNER_BL: 25,
+  CORNER_BR: 26,
+  DOOR: 15,
+  WINDOW: 27,
+  DESK: 60,
+  CHAIR_DOWN: 72,
+  CHAIR_UP: 73,
+  PLANT: 48,
+  RUG_TL: 36, RUG_TR: 37, RUG_BL: 48, RUG_BR: 49,
+  PODIUM: 61,
+  EMPTY: 0,
+};
+
+class ParliamentScene extends Phaser.Scene {
+  constructor() { super({ key: 'Parliament' }); }
+
+  preload() {
+    this.load.image('town', '/assets/tilemap_town.png');
+    this.load.image('dungeon', '/assets/tilemap_dungeon.png');
+  }
+
+  create() {
+    gameScene = this;
+    const W = this.scale.width;
+    const H = this.scale.height;
+
+    // ── Draw room directly with graphics + colored rectangles ──
+    // We use Graphics to build a warm pixel room without needing
+    // exact tile indices (which require visual inspection)
+    this._buildRoom();
+    this._buildFurniture();
+    this._buildCharacters();
+    this._buildBubbles();
+    this._setupInput();
+
+    // Keyboard
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.wasd = this.input.keyboard.addKeys({
+      up: Phaser.Input.Keyboard.KeyCodes.W,
+      down: Phaser.Input.Keyboard.KeyCodes.S,
+      left: Phaser.Input.Keyboard.KeyCodes.A,
+      right: Phaser.Input.Keyboard.KeyCodes.D,
+    });
+
+    this.playerTarget = null;  // {x,y} tile target
+    this.playerMoveTimer = 0;
+  }
+
+  _roomX(col) { return col * TW * SCALE; }
+  _roomY(row) { return row * TH * SCALE; }
+
+  _buildRoom() {
+    const g = this.add.graphics();
+    const W = this.scale.width;
+    const H = this.scale.height;
+
+    // Background outside room
+    g.fillStyle(0x1a100a);
+    g.fillRect(0, 0, W, H);
+
+    // Floor — warm wood
+    const floorX = TW * SCALE;
+    const floorY = TH * SCALE * 2;
+    const floorW = (COLS - 2) * TW * SCALE;
+    const floorH = (ROWS - 4) * TH * SCALE;
+
+    // Main floor tiles (pixelated stripes for wood effect)
+    for (let col = 1; col < COLS - 1; col++) {
+      for (let row = 2; row < ROWS - 2; row++) {
+        const shade = ((col + row) % 3 === 0) ? 0x6b4423 :
+                      ((col + row) % 3 === 1) ? 0x7a5230 : 0x704a28;
+        g.fillStyle(shade);
+        g.fillRect(col * TW * SCALE, row * TH * SCALE, TW * SCALE, TH * SCALE);
+      }
+    }
+
+    // Carpet (center area)
+    const carpetColors = [0x5c3060, 0x6b3870, 0x5c3060];
+    for (let col = 3; col < COLS - 3; col++) {
+      for (let row = 4; row < ROWS - 4; row++) {
+        const ci = ((col - 3 + row - 4)) % carpetColors.length;
+        g.fillStyle(carpetColors[ci]);
+        g.fillRect(col * TW * SCALE, row * TH * SCALE, TW * SCALE - 1, TH * SCALE - 1);
+      }
+    }
+
+    // Walls
+    g.fillStyle(0x3d2510);
+    // Top wall
+    for (let col = 0; col < COLS; col++) {
+      g.fillRect(col * TW * SCALE, TH * SCALE, TW * SCALE, TH * SCALE);
+      if (col % 2 === 0) { // brick pattern
+        g.fillStyle(0x2d1a08);
+        g.fillRect(col * TW * SCALE, TH * SCALE + 1, TW * SCALE, 2);
+        g.fillStyle(0x3d2510);
+      }
+    }
+    // Bottom wall
+    for (let col = 0; col < COLS; col++) {
+      g.fillStyle(0x3d2510);
+      g.fillRect(col * TW * SCALE, (ROWS - 2) * TH * SCALE, TW * SCALE, TH * SCALE);
+    }
+    // Left wall
+    for (let row = 1; row < ROWS - 1; row++) {
+      g.fillStyle(0x3d2510);
+      g.fillRect(0, row * TH * SCALE, TW * SCALE, TH * SCALE);
+    }
+    // Right wall
+    for (let row = 1; row < ROWS - 1; row++) {
+      g.fillStyle(0x3d2510);
+      g.fillRect((COLS - 1) * TW * SCALE, row * TH * SCALE, TW * SCALE, TH * SCALE);
+    }
+
+    // Door at bottom center
+    const doorCol = Math.floor(COLS / 2);
+    g.fillStyle(0x5a3820);
+    g.fillRect(doorCol * TW * SCALE, (ROWS - 2) * TH * SCALE, TW * SCALE * 2, TH * SCALE);
+    g.fillStyle(0x8b6040);
+    g.fillRect(doorCol * TW * SCALE + 3, (ROWS - 2) * TH * SCALE + 3, TW * SCALE * 2 - 6, TH * SCALE - 6);
+
+    // Windows on top wall
+    for (const wc of [3, 7, 11, 15]) {
+      if (wc < COLS - 1) {
+        g.fillStyle(0x7db8e8);
+        g.fillRect(wc * TW * SCALE + 2, TH * SCALE + 2, TW * SCALE - 4, TH * SCALE - 4);
+        g.fillStyle(0x5090c0);
+        g.fillRect(wc * TW * SCALE + 2, TH * SCALE + TH * SCALE / 2 - 1, TW * SCALE - 4, 2);
+        g.fillRect(wc * TW * SCALE + TW * SCALE / 2 - 1, TH * SCALE + 2, 2, TH * SCALE - 4);
+      }
+    }
+
+    // Warm lighting overlay (subtle gradient)
+    g.fillStyle(0xf0a020, 0.04);
+    g.fillRect(0, 0, W, H);
+
+    this._roomGraphics = g;
+  }
+
+  _buildFurniture() {
+    const g = this.add.graphics();
+
+    // ── Podium / Chair platform (top center) ──
+    const podX = Math.floor(COLS / 2 - 1);
+    const podY = 2;
+    this._drawDesk(g, podX, podY, 3, 1, 0x8b6830, 0xc8a060, '⚖', 0xffe066);
+    this._podiumRect = { col: podX, row: podY, w: 3, h: 1 };
+
+    // ── Member desks (3 desks in middle row) ──
+    const deskY = 6;
+    const deskPositions = [
+      { col: 2,  label: 'A', color: 0x1040a0, nameColor: 0x5baaff },
+      { col: 8,  label: 'B', color: 0x104010, nameColor: 0x5bd45b },
+      { col: 14, label: 'C', color: 0x801808, nameColor: 0xff8a5b },
+    ];
+
+    this._deskRects = {};
+    for (const d of deskPositions) {
+      this._drawDesk(g, d.col, deskY, 3, 1, d.color, d.color + 0x203040, d.label, d.nameColor);
+      // Chair behind desk
+      this._drawChair(g, d.col + 1, deskY - 1);
+      this._deskRects[d.label] = { col: d.col, row: deskY, w: 3, h: 2, label: d.label };
+    }
+
+    // Plants in corners
+    this._drawPlant(g, 1, 2);
+    this._drawPlant(g, COLS - 2, 2);
+    this._drawPlant(g, 1, ROWS - 4);
+    this._drawPlant(g, COLS - 2, ROWS - 4);
+
+    this._furnitureGraphics = g;
+  }
+
+  _drawDesk(g, col, row, w, h, baseColor, topColor, label, labelColor) {
+    const x = col * TW * SCALE;
+    const y = row * TH * SCALE;
+    const W = w * TW * SCALE;
+    const H = h * TH * SCALE;
+    // Shadow
+    g.fillStyle(0x000000, 0.3);
+    g.fillRect(x + 2, y + 2, W, H);
+    // Base
+    g.fillStyle(baseColor);
+    g.fillRect(x, y, W, H);
+    // Top surface
+    g.fillStyle(topColor);
+    g.fillRect(x + 1, y + 1, W - 2, H - 4);
+    // Label pixel text (just colored mark)
+    if (label) {
+      const lx = x + W / 2;
+      const ly = y + H / 2;
+      // Small colored badge on desk
+      g.fillStyle(labelColor);
+      g.fillRect(lx - 4, ly - 2, 8, 4);
+    }
+    // Store text label separately using Phaser text
+    const style = { fontSize: `${SCALE * 5}px`, color: '#' + labelColor.toString(16).padStart(6,'0'),
+                    fontFamily: 'monospace', resolution: 2 };
+    const t = this.add.text(x + W / 2, y + H / 2, label, style).setOrigin(0.5, 0.5);
+  }
+
+  _drawChair(g, col, row) {
+    const x = col * TW * SCALE + TW * SCALE / 4;
+    const y = row * TH * SCALE + TH * SCALE / 4;
+    const s = TW * SCALE / 2;
+    g.fillStyle(0x4a2a10);
+    g.fillRect(x, y, s, s);
+    g.fillStyle(0x6a4020);
+    g.fillRect(x + 1, y + 1, s - 2, s / 2);
+  }
+
+  _drawPlant(g, col, row) {
+    const x = col * TW * SCALE;
+    const y = row * TH * SCALE;
+    // Pot
+    g.fillStyle(0x8b4520);
+    g.fillRect(x + 4, y + 8, 8, 6);
+    // Leaves
+    g.fillStyle(0x2a8030);
+    g.fillRect(x + 2, y + 3, 12, 7);
+    g.fillStyle(0x38a040);
+    g.fillRect(x + 4, y, 8, 5);
+  }
+
+  _buildCharacters() {
+    // Character positions
+    this._chars = {};
+
+    // Chair (at podium)
+    const podMid = Math.floor(COLS / 2);
+    this._chars['chair'] = this._createChar(podMid, 3, 0xffe066, '主');
+
+    // Members at desks
+    const memberPos = { A: { col: 3, row: 7 }, B: { col: 9, row: 7 }, C: { col: 15, row: 7 } };
+    for (const [label, pos] of Object.entries(memberPos)) {
+      const color = { A: 0x5baaff, B: 0x5bd45b, C: 0xff8a5b }[label];
+      this._chars[label] = this._createChar(pos.col, pos.row, color, label);
+    }
+
+    // Player avatar
+    this._playerCol = Math.floor(COLS / 2);
+    this._playerRow = ROWS - 3;
+    this._playerChar = this._createChar(this._playerCol, this._playerRow, 0xe8a030, '你');
+    this._playerAnim = 0;
+  }
+
+  _createChar(col, row, color, label) {
+    const g = this.add.graphics();
+    this._drawPixelChar(g, col * TW * SCALE, row * TH * SCALE, color, label);
+    return { col, row, color, label, g };
+  }
+
+  _drawPixelChar(g, px, py, color, label, dir) {
+    g.clear();
+    const s = SCALE;
+    // Shadow
+    g.fillStyle(0x000000, 0.25);
+    g.fillRect(px + s, py + 10 * s, 12 * s, 2 * s);
+    // Body (pixel art character ~14x16px at scale 1)
+    // Feet
+    g.fillStyle(color & 0x404040 ? color - 0x404040 : 0x302010);
+    g.fillRect(px + 4*s, py + 12*s, 3*s, 4*s);
+    g.fillRect(px + 9*s, py + 12*s, 3*s, 4*s);
+    // Torso
+    g.fillStyle(color);
+    g.fillRect(px + 3*s, py + 6*s, 10*s, 6*s);
+    // Arms
+    g.fillStyle(color);
+    g.fillRect(px + 0*s, py + 7*s, 3*s, 4*s);
+    g.fillRect(px + 13*s, py + 7*s, 3*s, 4*s);
+    // Head skin
+    g.fillStyle(0xf5c68a);
+    g.fillRect(px + 4*s, py + 0*s, 8*s, 6*s);
+    // Eyes
+    g.fillStyle(0x202020);
+    g.fillRect(px + 5*s, py + 2*s, 2*s, 2*s);
+    g.fillRect(px + 9*s, py + 2*s, 2*s, 2*s);
+    // Hair / hat color accent
+    g.fillStyle(color);
+    g.fillRect(px + 4*s, py + 0*s, 8*s, 2*s);
+  }
+
+  _buildBubbles() {
+    this._bubbles = {};
+    for (const key of ['chair','A','B','C']) {
+      const g = this.add.graphics();
+      const t = this.add.text(0, 0, '', {
+        fontSize: `${SCALE * 4}px`, color: '#ffffff',
+        fontFamily: 'monospace', resolution: 2,
+        backgroundColor: '#1a1008cc', padding: { x: 3, y: 2 }
+      }).setDepth(10);
+      g.setDepth(9);
+      this._bubbles[key] = { g, t, text: '' };
+    }
+  }
+
+  _setBubble(key, text, color) {
+    const b = this._bubbles[key];
+    if (!b) return;
+    const char = this._chars[key];
+    if (!char) return;
+    const px = char.col * TW * SCALE;
+    const py = char.row * TH * SCALE;
+    b.t.setPosition(px + TW * SCALE / 2, py - 4 * SCALE);
+    b.t.setOrigin(0.5, 1);
+    b.t.setText(text || '');
+    b.t.setStyle({ color: color || '#ffffff' });
+  }
+
+  resetMemberStates() {
+    for (const key of ['A','B','C','chair']) {
+      this._setBubble(key, '', '#ffffff');
+    }
+  }
+
+  updateFromSession(d) {
+    for (const label of ['A','B','C']) {
+      const m = d.members[label];
+      if (m.status === 'running') this._setBubble(label, '…', '#aaaaaa');
+      else if (m.status === 'done') this._setBubble(label, '!', '#5bd45b');
+      else if (m.status === 'error') this._setBubble(label, 'zzz', '#ff5b5b');
+      else this._setBubble(label, '', '#ffffff');
+    }
+    if (d.chair_status === 'running') this._setBubble('chair', '…', '#ffe066');
+    else if (d.chair_status === 'done') this._setBubble('chair', '✓', '#ffe066');
+    else this._setBubble('chair', '', '#ffe066');
+  }
+
+  _setupInput() {
+    // Tap / click on canvas
+    this.input.on('pointerdown', (ptr) => {
+      const col = Math.floor(ptr.x / (TW * SCALE));
+      const row = Math.floor(ptr.y / (TH * SCALE));
+      this._handleTap(col, row, ptr.x, ptr.y);
+    });
+  }
+
+  _handleTap(col, row, px, py) {
+    // Check podium
+    const p = this._podiumRect;
+    if (col >= p.col && col < p.col + p.w && row >= p.row && row < p.row + p.h + 1) {
+      openChairSheet();
+      return;
+    }
+    // Chair character
+    const chair = this._chars['chair'];
+    if (col === chair.col && row === chair.row) {
+      openChairSheet();
+      return;
+    }
+    // Check member desks
+    for (const [label, d] of Object.entries(this._deskRects)) {
+      if (col >= d.col && col < d.col + d.w && row >= d.row && row < d.row + d.h) {
+        this._movePlayerTo(d.col + 1, d.row + 2);
+        this.time.delayedCall(300, () => openMemberSheet(label));
+        return;
+      }
+      // Member character
+      const mc = this._chars[label];
+      if (mc && col === mc.col && row === mc.row) {
+        this._movePlayerTo(mc.col, mc.row + 1);
+        this.time.delayedCall(300, () => openMemberSheet(label));
+        return;
+      }
+    }
+    // Move player to clicked floor tile
+    if (col > 0 && col < COLS - 1 && row > 1 && row < ROWS - 2) {
+      this._movePlayerTo(col, row);
+    }
+  }
+
+  _movePlayerTo(col, row) {
+    this.playerTarget = { col, row };
+  }
+
+  _updatePlayer(delta) {
+    // Keyboard movement
+    const speed = 0.008; // tiles per ms
+    let moved = false;
+    const dt = delta;
+    const step = Math.max(1, Math.round(speed * dt));
+
+    if (this.playerTarget) {
+      const dc = this.playerTarget.col - this._playerCol;
+      const dr = this.playerTarget.row - this._playerRow;
+      if (Math.abs(dc) + Math.abs(dr) <= 1) {
+        this._playerCol = this.playerTarget.col;
+        this._playerRow = this.playerTarget.row;
+        this.playerTarget = null;
+        moved = true;
+      } else {
+        if (dc !== 0) this._playerCol += Math.sign(dc);
+        else if (dr !== 0) this._playerRow += Math.sign(dr);
+        moved = true;
+      }
+    }
+
+    // Keyboard
+    this.playerMoveTimer -= delta;
+    if (this.playerMoveTimer <= 0) {
+      let nc = this._playerCol, nr = this._playerRow;
+      if (this.cursors.left.isDown || this.wasd.left.isDown) { nc--; moved = true; }
+      else if (this.cursors.right.isDown || this.wasd.right.isDown) { nc++; moved = true; }
+      else if (this.cursors.up.isDown || this.wasd.up.isDown) { nr--; moved = true; }
+      else if (this.cursors.down.isDown || this.wasd.down.isDown) { nr++; moved = true; }
+      if (moved) {
+        nc = Phaser.Math.Clamp(nc, 1, COLS - 2);
+        nr = Phaser.Math.Clamp(nr, 2, ROWS - 3);
+        this._playerCol = nc;
+        this._playerRow = nr;
+        this.playerMoveTimer = 160; // ms between steps
+      }
+    }
+
+    if (moved) {
+      this._playerAnim = (this._playerAnim + 1) % 4;
+      const px = this._playerCol * TW * SCALE;
+      const py = this._playerRow * TH * SCALE;
+      const bounce = (this._playerAnim === 1 || this._playerAnim === 3) ? -SCALE : 0;
+      this._playerChar.g.setPosition(0, bounce);
+      this._drawPixelChar(this._playerChar.g, px, py + bounce, this._playerChar.color, '你');
+    }
+  }
+
+  update(time, delta) {
+    this._updatePlayer(delta);
+  }
+}
+
+// ── Resize helper ──
+function getGameSize() {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  // Keep room proportions; fill screen
+  const roomW = COLS * TW * SCALE;
+  const roomH = ROWS * TH * SCALE;
+  // If room fits, use room size; otherwise scale to fit
+  if (roomW <= W && roomH <= H) return { width: roomW, height: roomH };
+  const scaleX = W / roomW, scaleY = H / roomH;
+  const s = Math.min(scaleX, scaleY);
+  return { width: Math.floor(roomW * s), height: Math.floor(roomH * s) };
+}
+
+const gameSize = getGameSize();
+const game = new Phaser.Game({
+  type: Phaser.AUTO,
+  width: COLS * TW * SCALE,
+  height: ROWS * TH * SCALE,
+  backgroundColor: '#1a100a',
+  parent: 'game-wrap',
+  scene: [ParliamentScene],
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+  },
+  render: { pixelArt: true, antialias: false },
+});
+
+// Close sheet on backdrop tap (outside sheet area)
+document.getElementById('game-wrap').addEventListener('click', (e) => {
+  if (document.getElementById('sheet').classList.contains('open')) {
+    // Let Phaser handle taps; sheet has its own close button
+  }
 });
 </script>
 </body>
