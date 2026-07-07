@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 眾議院</title>
+<style>
+:root {
+  --bg:      #0d1117;
+  --surface: #161b22;
+  --card:    #1c2230;
+  --border:  #30363d;
+  --text:    #e6edf3;
+  --muted:   #8b949e;
+  --accent:  #d4a843;
+  --ca:      #58a6ff;
+  --cb:      #3fb950;
+  --cc:      #f78166;
+  --err:     #f85149;
+  --run:     #e3b341;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ── */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+header h1 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+}
+header .subtitle {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* ── Question input ── */
+.ask-bar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 1rem 1.5rem;
+  display: flex;
+  gap: 0.75rem;
+}
+.ask-bar textarea {
+  flex: 1;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.95rem;
+  padding: 0.6rem 0.9rem;
+  resize: none;
+  height: 3rem;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color .15s;
+}
+.ask-bar textarea:focus { border-color: var(--accent); }
+.ask-bar button {
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #000;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 0 1.2rem;
+  white-space: nowrap;
+  transition: opacity .15s;
+}
+.ask-bar button:disabled { opacity: .4; cursor: default; }
+.ask-bar button:hover:not(:disabled) { opacity: .85; }
+
+/* ── Main layout ── */
+main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+.chamber {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 1.5rem;
+  gap: 1.25rem;
+  overflow-y: auto;
+}
+
+/* ── Member cards ── */
+.members {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+.member-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
+  overflow: hidden;
+  transition: border-color .2s;
+}
+.member-card.A { border-top: 3px solid var(--ca); }
+.member-card.B { border-top: 3px solid var(--cb); }
+.member-card.C { border-top: 3px solid var(--cc); }
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+.card-label {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.member-card.A .card-label { color: var(--ca); }
+.member-card.B .card-label { color: var(--cb); }
+.member-card.C .card-label { color: var(--cc); }
+
+.status-badge {
+  font-size: 0.7rem;
+  padding: 2px 7px;
+  border-radius: 99px;
+  font-weight: 600;
+}
+.status-badge.running  { background: #332d1a; color: var(--run); }
+.status-badge.done     { background: #1b2a1b; color: var(--cb); }
+.status-badge.error    { background: #2d1a1a; color: var(--err); }
+.status-badge.pending  { background: var(--surface); color: var(--muted); }
+
+.card-body {
+  flex: 1;
+  padding: 0.8rem 0.9rem;
+  font-size: 0.88rem;
+  line-height: 1.65;
+  overflow-y: auto;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.card-body .empty { color: var(--muted); font-style: italic; }
+
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--run);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.card-footer {
+  padding: 0.55rem 0.9rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+}
+.btn-chat {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 3px 10px;
+  transition: color .15s, border-color .15s;
+}
+.btn-chat:hover { color: var(--text); border-color: var(--text); }
+
+/* ── Chair section ── */
+.chair-section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.chair-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+.chair-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--accent);
+}
+.btn-resummarize {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 3px 10px;
+  transition: color .15s;
+}
+.btn-resummarize:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.btn-resummarize:disabled { opacity: .4; cursor: default; }
+
+.chair-body {
+  padding: 0.9rem;
+  font-size: 0.88rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 100px;
+  color: var(--text);
+}
+.chair-body .empty { color: var(--muted); font-style: italic; }
+
+/* ── Side panel (followup chat) ── */
+.side-panel {
+  width: 360px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform .25s ease;
+  position: relative;
+}
+.side-panel.open { transform: translateX(0); }
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.panel-title { font-weight: 700; font-size: 0.9rem; }
+.btn-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+.btn-close:hover { color: var(--text); }
+
+.panel-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.8rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.msg {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.msg.user {
+  background: #1f2d3d;
+  align-self: flex-end;
+  max-width: 85%;
+}
+.msg.ai {
+  background: var(--card);
+  border: 1px solid var(--border);
+  align-self: flex-start;
+  max-width: 90%;
+}
+.msg-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-bottom: 3px;
+  color: var(--muted);
+}
+
+.panel-input {
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  display: flex;
+  gap: 0.5rem;
+}
+.panel-input textarea {
+  flex: 1;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 0.85rem;
+  padding: 0.5rem 0.7rem;
+  resize: none;
+  height: 2.5rem;
+  outline: none;
+}
+.panel-input textarea:focus { border-color: var(--accent); }
+.panel-input button {
+  background: var(--accent);
+  border: none;
+  border-radius: 5px;
+  color: #000;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0 0.8rem;
+}
+.panel-input button:disabled { opacity: .4; cursor: default; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚖ AI 眾議院</h1>
+  <span class="subtitle">三家 AI 委員同步議事・主席匿名總結</span>
+</header>
+
+<div class="ask-bar">
+  <textarea id="qInput" placeholder="輸入議題，按「提交」…" rows="1"></textarea>
+  <button id="submitBtn" onclick="submitQuestion()">提交議題</button>
+</div>
+
+<main>
+  <div class="chamber">
+    <div class="members">
+      <div class="member-card A" id="cardA">
+        <div class="card-header">
+          <span class="card-label">委員 A</span>
+          <span class="status-badge pending" id="badgeA">待機</span>
+        </div>
+        <div class="card-body" id="bodyA"><span class="empty">尚無回答</span></div>
+        <div class="card-footer">
+          <button class="btn-chat" onclick="openPanel('A')" disabled id="chatA">深聊 ↗</button>
+        </div>
+      </div>
+      <div class="member-card B" id="cardB">
+        <div class="card-header">
+          <span class="card-label">委員 B</span>
+          <span class="status-badge pending" id="badgeB">待機</span>
+        </div>
+        <div class="card-body" id="bodyB"><span class="empty">尚無回答</span></div>
+        <div class="card-footer">
+          <button class="btn-chat" onclick="openPanel('B')" disabled id="chatB">深聊 ↗</button>
+        </div>
+      </div>
+      <div class="member-card C" id="cardC">
+        <div class="card-header">
+          <span class="card-label">委員 C</span>
+          <span class="status-badge pending" id="badgeC">待機</span>
+        </div>
+        <div class="card-body" id="bodyC"><span class="empty">尚無回答</span></div>
+        <div class="card-footer">
+          <button class="btn-chat" onclick="openPanel('C')" disabled id="chatC">深聊 ↗</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="chair-section">
+      <div class="chair-header">
+        <span class="chair-title">主席總結</span>
+        <button class="btn-resummarize" id="resummarizeBtn" onclick="resummarize()" disabled>
+          再總結
+        </button>
+      </div>
+      <div class="chair-body" id="chairBody"><span class="empty">等待委員回答後自動總結…</span></div>
+    </div>
+  </div>
+
+  <div class="side-panel" id="sidePanel">
+    <div class="panel-header">
+      <span class="panel-title" id="panelTitle">深聊</span>
+      <button class="btn-close" onclick="closePanel()">✕</button>
+    </div>
+    <div class="panel-history" id="panelHistory"></div>
+    <div class="panel-input">
+      <textarea id="fuInput" placeholder="追問委員…"></textarea>
+      <button id="fuBtn" onclick="sendFollowup()">送出</button>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── State ──
+let sessionId = null;
+let pollTimer = null;
+let activePanel = null;
+let sessionData = null;
+
+// ── Submit question ──
+async function submitQuestion() {
+  const q = document.getElementById('qInput').value.trim();
+  if (!q) return;
+  document.getElementById('submitBtn').disabled = true;
+  clearAll();
+
+  setAllBadges('running', '作答中');
+  setAllBodies('<span class="spinner"></span> 思考中…');
+
+  const res = await fetch('/api/parliament', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({question: q})
+  });
+  const d = await res.json();
+  if (!d.session_id) { alert('啟動失敗'); return; }
+  sessionId = d.session_id;
+  startPolling();
+}
+
+// ── Polling ──
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollSession, 2000);
+}
+
+async function pollSession() {
+  if (!sessionId) return;
+  const res = await fetch(`/api/parliament/${sessionId}`);
+  if (!res.ok) return;
+  sessionData = await res.json();
+  renderSession(sessionData);
+
+  // Stop polling when fully done
+  if (sessionData.status === 'done' && sessionData.chair_status === 'done') {
+    clearInterval(pollTimer);
+    pollTimer = null;
+    document.getElementById('submitBtn').disabled = false;
+    document.getElementById('resummarizeBtn').disabled = false;
+  }
+
+  // Refresh side panel if open
+  if (activePanel) refreshPanel(activePanel);
+}
+
+// ── Render session ──
+function renderSession(d) {
+  for (const label of ['A','B','C']) {
+    const m = d.members[label];
+    const badge = document.getElementById(`badge${label}`);
+    const body  = document.getElementById(`body${label}`);
+    const chat  = document.getElementById(`chat${label}`);
+
+    if (m.status === 'done') {
+      setBadge(badge, 'done', '✓ 完成');
+      body.textContent = m.response || '(無回應)';
+      chat.disabled = false;
+    } else if (m.status === 'error') {
+      setBadge(badge, 'error', '✗ 缺席');
+      body.innerHTML = `<span class="empty">本席缺席（${m.error || '錯誤'}）</span>`;
+    } else {
+      setBadge(badge, 'running', '作答中');
+      body.innerHTML = '<span class="spinner"></span> 思考中…';
+    }
+  }
+
+  const chairBody = document.getElementById('chairBody');
+  if (d.chair_status === 'done' && d.chair_summary) {
+    chairBody.textContent = d.chair_summary;
+  } else if (d.chair_status === 'running') {
+    chairBody.innerHTML = '<span class="spinner"></span> 主席整理中…';
+  } else if (d.chair_status === 'pending') {
+    chairBody.innerHTML = '<span class="empty">等待委員完成後自動總結…</span>';
+  }
+}
+
+// ── Clear UI ──
+function clearAll() {
+  sessionId = null;
+  sessionData = null;
+  closePanel();
+  document.getElementById('resummarizeBtn').disabled = true;
+  setAllBadges('pending', '待機');
+  setAllBodies('<span class="empty">尚無回答</span>');
+  document.getElementById('chairBody').innerHTML = '<span class="empty">等待委員回答後自動總結…</span>';
+  ['chatA','chatB','chatC'].forEach(id => document.getElementById(id).disabled = true);
+}
+
+function setAllBadges(cls, text) {
+  ['A','B','C'].forEach(l => setBadge(document.getElementById(`badge${l}`), cls, text));
+}
+function setAllBodies(html) {
+  ['A','B','C'].forEach(l => { document.getElementById(`body${l}`).innerHTML = html; });
+}
+function setBadge(el, cls, text) {
+  el.className = `status-badge ${cls}`;
+  el.textContent = text;
+}
+
+// ── Side panel ──
+function openPanel(label) {
+  activePanel = label;
+  document.getElementById('panelTitle').textContent = `委員 ${label} 深聊`;
+  document.getElementById('sidePanel').classList.add('open');
+  refreshPanel(label);
+}
+
+function closePanel() {
+  activePanel = null;
+  document.getElementById('sidePanel').classList.remove('open');
+  document.getElementById('panelHistory').innerHTML = '';
+}
+
+function refreshPanel(label) {
+  if (!sessionData) return;
+  const hist = document.getElementById('panelHistory');
+  const msgs = [];
+
+  // Initial Q&A
+  const m = sessionData.members[label];
+  if (m && m.response) {
+    msgs.push({role:'user', content: sessionData.question});
+    msgs.push({role:'ai', content: m.response});
+  }
+
+  // Followups for this member
+  for (const f of (sessionData.followups || [])) {
+    if (f.member !== label) continue;
+    msgs.push({role:'user', content: f.question});
+    if (f.status === 'running') {
+      msgs.push({role:'ai', content: '…思考中', running: true});
+    } else if (f.response) {
+      msgs.push({role:'ai', content: f.response});
+    }
+  }
+
+  hist.innerHTML = msgs.map(m => {
+    const cls = m.role === 'user' ? 'user' : 'ai';
+    const labelText = m.role === 'user' ? '您' : `委員 ${label}`;
+    const body = m.running
+      ? `<span class="spinner"></span> ${m.content}`
+      : escHtml(m.content);
+    return `<div class="msg ${cls}"><div class="msg-label">${labelText}</div>${body}</div>`;
+  }).join('');
+  hist.scrollTop = hist.scrollHeight;
+
+  // Enable/disable send
+  const hasPending = (sessionData.followups || []).some(
+    f => f.member === label && f.status === 'running'
+  );
+  document.getElementById('fuBtn').disabled = hasPending;
+}
+
+async function sendFollowup() {
+  const q = document.getElementById('fuInput').value.trim();
+  if (!q || !activePanel || !sessionId) return;
+  document.getElementById('fuBtn').disabled = true;
+  document.getElementById('fuInput').value = '';
+
+  await fetch(`/api/parliament/${sessionId}/followup`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({member: activePanel, question: q})
+  });
+
+  // Start polling if not already
+  if (!pollTimer) startPolling();
+}
+
+// ── Re-summarize ──
+async function resummarize() {
+  if (!sessionId) return;
+  document.getElementById('resummarizeBtn').disabled = true;
+  document.getElementById('chairBody').innerHTML = '<span class="spinner"></span> 主席重新整理中…';
+  await fetch(`/api/parliament/${sessionId}/summarize`, {method:'POST'});
+  startPolling();
+}
+
+// ── Utils ──
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Allow Ctrl+Enter to submit
+document.getElementById('qInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submitQuestion();
+});
+</script>
+</body>
+</html>
