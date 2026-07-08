@@ -77,6 +77,33 @@ class TestChairChokePoint(unittest.TestCase):
         self.assertEqual(brands_in(out), [])
         self.assertIn("[某AI]", out)
 
+    def test_bare_google_redacted_hot_review_p1(self):
+        # VA hot review P1-1: "my developer is Google" attributed member → Gemini
+        for leak in ["My developer is Google.", "我的開發商是 Google",
+                     "This answer is brought to you by Google."]:
+            out = redact_model_names(leak)
+            self.assertNotRegex(out, r"(?i)\bGoogle\b", f"leaked via {leak!r}")
+
+    def test_custom_seat_brands_from_config_redacted_hot_review_p2(self):
+        # VA hot review P2-1: custom adapters (e.g. local Mistral) must be
+        # redacted based on config-derived names, not the static list alone.
+        out = redact_model_names(
+            "I am WizardCoder, a fine-tune served by ollama.",
+            extra_brands=["WizardCoder 34B", "ollama"],
+        )
+        self.assertNotIn("WizardCoder", out)
+        self.assertNotIn("ollama", out)
+
+    def test_chair_prompt_redacts_custom_brand_via_extra_brands(self):
+        prompt = build_chair_prompt(
+            question="測試議題",
+            anon_responses={"A": "As WizardCoder I recommend option 2."},
+            member_statuses={"A": "done"},
+            chair_system="",
+            extra_brands=["WizardCoder 34B"],
+        )
+        self.assertNotIn("WizardCoder", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

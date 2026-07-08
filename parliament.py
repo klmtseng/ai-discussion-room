@@ -191,6 +191,10 @@ def run_summary(
             anon[label] = anonymizer.filter_self_id(m["response"], label)
 
     chair_system = config.get("chair_system_prompt", "")
+    # Custom seats (config-defined) get their display/adapter names redacted too
+    members_cfg = anonymizer.members_from_config(config)
+    extra_brands = [m.get("model_display", "") for m in members_cfg] + \
+                   [m.get("adapter", "") for m in members_cfg]
     prompt = anonymizer.build_chair_prompt(
         question=question,
         anon_responses=anon,
@@ -199,6 +203,7 @@ def run_summary(
         is_resummary=is_resummary,
         followup_summaries=followups_snap if is_resummary else None,
         labels=labels,
+        extra_brands=extra_brands,
     )
 
     try:

@@ -240,15 +240,31 @@ def filter_self_id(text: str, label: str) -> str:
 # vendor brand in member-derived text is redacted at this single choke point.
 # The user-visible response text is NOT redacted (users see who is who anyway).
 _BRAND_RE = re.compile(
+    # Bare "Google" IS included (VA hot review P1-1): "my developer is Google"
+    # is the most natural Gemini self-attribution. In chair-bound text,
+    # attribution safety beats content fidelity — a neutral mention of
+    # Google-the-company being redacted is acceptable collateral.
     r"\b(Claude|ChatGPT|GPT[-\w.]*|Gemini|Bard|Codex|Copilot|"
-    r"Anthropic|OpenAI|Google\s+DeepMind|DeepMind)\b",
+    r"Anthropic|OpenAI|Google(\s+DeepMind)?|DeepMind|Meta|xAI|Grok|"
+    r"Mistral|Llama|DeepSeek|Qwen)\b",
     re.IGNORECASE,
 )
 
 
-def redact_model_names(text: str) -> str:
-    """Replace every model/vendor brand token with [某AI]. Chair-bound text only."""
-    return _BRAND_RE.sub("[某AI]", text)
+def redact_model_names(text: str, extra_brands: Optional[List[str]] = None) -> str:
+    """
+    Replace every model/vendor brand token with [某AI]. Chair-bound text only.
+
+    extra_brands: brand strings derived from the runtime config (each member's
+    model_display and adapter id), so custom seats added via config are
+    redacted too even if absent from the static list (VA hot review P2-1).
+    """
+    text = _BRAND_RE.sub("[某AI]", text)
+    for brand in extra_brands or []:
+        for token in re.split(r"[\s/_-]+", str(brand)):
+            if len(token) >= 3 and not token.isdigit():
+                text = re.sub(rf"(?i)\b{re.escape(token)}\b", "[某AI]", text)
+    return text
 
 
 def build_chair_prompt(
@@ -259,6 +275,7 @@ def build_chair_prompt(
     is_resummary: bool = False,
     followup_summaries: Optional[List[dict]] = None,
     labels: Optional[List[str]] = None,
+    extra_brands: Optional[List[str]] = None,
 ) -> str:
     """
     Build the chair prompt. Member sections are pre-filtered by filter_self_id
@@ -298,7 +315,7 @@ def build_chair_prompt(
     for label in labels:
         status = member_statuses.get(label, "error")
         if status == "done":
-            resp = redact_model_names(anon_responses.get(label, "(無內容)"))
+            resp = redact_model_names(anon_responses.get(label, "(無內容)"), extra_brands)
             parts.append(f"【委員{label}】")
             parts.append(resp)
         else:
@@ -315,8 +332,8 @@ def build_chair_prompt(
             if a:
                 # q is user-authored and may address a member by brand
                 # ("Claude 你覺得呢?") — that WOULD deanonymize, so redact both.
-                parts.append(f"委員{label} 被追問：{redact_model_names(q)}")
-                parts.append(f"委員{label} 補充：{redact_model_names(filter_self_id(a, label))}")
+                parts.append(f"委員{label} 被追問：{redact_model_names(q, extra_brands)}")
+                parts.append(f"委員{label} 補充：{redact_model_names(filter_self_id(a, label), extra_brands)}")
                 parts.append("")
 
     parts.append("請輸出以下三部分：")

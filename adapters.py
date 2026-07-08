@@ -154,6 +154,7 @@ def _run_codex(prompt: str) -> Tuple[bool, str]:
         "--ephemeral",
         "--sandbox", "read-only",
         "--output-last-message", tmpfile,
+        "--",  # defence-in-depth: never let a dash-leading prompt parse as a flag
         prompt,
     ]
     try:

@@ -9,6 +9,7 @@ Usage:
   python3 server.py --port 8931     # custom port
   python3 server.py --mock --port 8931
 """
+import hmac
 import json
 import os
 import random
@@ -64,10 +65,10 @@ _PIN: str = _load_pin()
 
 
 def _check_pin(handler: "BaseHTTPRequestHandler") -> bool:
-    """Return True if the request carries the correct PIN."""
+    """Return True if the request carries the correct PIN (constant-time compare)."""
     # Check header X-Parliament-Pin
     header_pin = handler.headers.get("X-Parliament-Pin", "").strip()
-    if header_pin == _PIN:
+    if hmac.compare_digest(header_pin, _PIN):
         return True
     # Check Cookie parliament_pin=<value>
     cookie_header = handler.headers.get("Cookie", "")
@@ -75,7 +76,7 @@ def _check_pin(handler: "BaseHTTPRequestHandler") -> bool:
         part = part.strip()
         if part.startswith("parliament_pin="):
             cookie_pin = part[len("parliament_pin="):].strip()
-            if cookie_pin == _PIN:
+            if hmac.compare_digest(cookie_pin, _PIN):
                 return True
     return False
 
@@ -261,6 +262,14 @@ class _Handler(BaseHTTPRequestHandler):
             config = _load_config()
             session = parliament.create_session(question, config)
             with _sessions_lock:
+                # Bounded store: evict oldest finished sessions beyond 50
+                # (memory otherwise grows without limit on a long-running server)
+                if len(_sessions) >= 50:
+                    for sid in sorted(
+                        (s["id"] for s in _sessions.values() if s.get("status") == "done"),
+                        key=lambda sid: _sessions[sid].get("created_at", 0),
+                    )[: max(1, len(_sessions) - 49)]:
+                        _sessions.pop(sid, None)
                 _sessions[session["id"]] = session
             t = threading.Thread(
                 target=parliament.run_session,
