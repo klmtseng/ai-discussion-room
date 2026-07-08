@@ -52,15 +52,31 @@ Open http://localhost:8930
 
 ## Anonymisation Mechanism
 
-Each round, members A / B / C are assigned to Claude / ChatGPT / Gemini in a random
-order (seed stored for debug, never sent to chair). Two layers of anonymisation:
+Each round, members A / B / C / … are assigned to the configured AIs in a random
+order (seed stored for debug, never sent to chair). Three layers, weakest to strongest:
 
-1. **Prompt layer**: members are instructed not to reveal their identity.
-2. **Deterministic filter**: 11 regex patterns remove self-identification phrases
-   (e.g., "I'm Claude", "我是ChatGPT", "身為AI語言模型") in both English and Chinese,
-   replacing them with `[委員X]`. This layer is the primary defence.
+1. **Prompt layer** (best-effort): members are instructed not to reveal their identity.
+2. **Self-ID filter** (best-effort): regex patterns rewrite self-identification phrases
+   (e.g., "I'm Claude", "我是ChatGPT", "made by Anthropic") to `[委員X]`, in English and
+   Chinese. A blocklist can always be phrased around — it is a backstop, not a guarantee.
+3. **Hard brand redaction at the chair choke point** (structural guarantee): every
+   member-derived string entering the chair prompt (answers, follow-up Q&A) passes
+   `redact_model_names()`, which removes ALL occurrences of model/vendor brand tokens
+   regardless of phrasing. The chair structurally cannot receive a brand name in
+   member text. (The shared user question is not redacted — it carries no
+   attribution signal. Writing style itself may still hint at a model; no filter
+   can remove that.)
 
-The chair receives only `[委員A/B/C]` labels, never model names.
+The UI shows YOU which member is which AI — anonymity is only against the chair.
+Note: idle desks before a round show members in config order; labels are reshuffled
+per round, so the A/B/C mapping is only meaningful once a round is running.
+
+---
+
+## Asset Credits & Licenses
+
+All pixel art is CC0 (Kenney packs); the engine is Phaser 3 (MIT).
+Full per-file attribution: [`static/assets/CREDITS.md`](static/assets/CREDITS.md).
 
 ---
 

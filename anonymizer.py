@@ -233,6 +233,24 @@ def filter_self_id(text: str, label: str) -> str:
 # Chair prompt builder
 # ---------------------------------------------------------------------------
 
+# Hard backstop for chair-bound text (VA cold review 2026-07-08, P2-1):
+# filter_self_id is a best-effort blocklist and WILL miss novel phrasings
+# ("This response comes from Gemini", "My name is Claude", …). For the chair,
+# attribution safety beats content fidelity, so every occurrence of a model /
+# vendor brand in member-derived text is redacted at this single choke point.
+# The user-visible response text is NOT redacted (users see who is who anyway).
+_BRAND_RE = re.compile(
+    r"\b(Claude|ChatGPT|GPT[-\w.]*|Gemini|Bard|Codex|Copilot|"
+    r"Anthropic|OpenAI|Google\s+DeepMind|DeepMind)\b",
+    re.IGNORECASE,
+)
+
+
+def redact_model_names(text: str) -> str:
+    """Replace every model/vendor brand token with [某AI]. Chair-bound text only."""
+    return _BRAND_RE.sub("[某AI]", text)
+
+
 def build_chair_prompt(
     question: str,
     anon_responses: Dict[str, str],
@@ -243,8 +261,11 @@ def build_chair_prompt(
     labels: Optional[List[str]] = None,
 ) -> str:
     """
-    Build the chair prompt. Member sections are pre-filtered by filter_self_id.
-    model_display values MUST NOT appear in anon_responses — caller's responsibility.
+    Build the chair prompt. Member sections are pre-filtered by filter_self_id
+    (best-effort) and then hard-redacted by redact_model_names at this choke
+    point, so the assembled prompt structurally contains no brand tokens in
+    member-derived text. The main question is user-authored and shared by all
+    members (no attribution signal), so it is intentionally NOT redacted.
 
     anon_responses: {label: already-filtered response text}
     member_statuses: {label: "done"|"error"|"running"}
@@ -277,7 +298,7 @@ def build_chair_prompt(
     for label in labels:
         status = member_statuses.get(label, "error")
         if status == "done":
-            resp = anon_responses.get(label, "(無內容)")
+            resp = redact_model_names(anon_responses.get(label, "(無內容)"))
             parts.append(f"【委員{label}】")
             parts.append(resp)
         else:
@@ -292,8 +313,10 @@ def build_chair_prompt(
             q = fs.get("question", "")
             a = fs.get("response", "")
             if a:
-                parts.append(f"委員{label} 被追問：{q}")
-                parts.append(f"委員{label} 補充：{filter_self_id(a, label)}")
+                # q is user-authored and may address a member by brand
+                # ("Claude 你覺得呢?") — that WOULD deanonymize, so redact both.
+                parts.append(f"委員{label} 被追問：{redact_model_names(q)}")
+                parts.append(f"委員{label} 補充：{redact_model_names(filter_self_id(a, label))}")
                 parts.append("")
 
     parts.append("請輸出以下三部分：")
