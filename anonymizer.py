@@ -95,6 +95,45 @@ _SELF_ID_PATTERNS: List[re.Pattern] = [
         r"我是由\s*(Anthropic|OpenAI|Google)\s*(訓練|開發|製造)",
         re.IGNORECASE,
     ),
+    # --- hardening (validity-audit 2026-07-08): mid-sentence self-reference ---
+    # English — "(made|trained|...) by Anthropic/OpenAI/Google" anywhere
+    re.compile(
+        r"\b(made|created|built|developed|trained|designed)\s+by\s+"
+        r"(Anthropic|OpenAI|Google(\s+DeepMind)?)\b",
+        re.IGNORECASE,
+    ),
+    # English — "Anthropic/OpenAI/Google trained/made me"
+    re.compile(
+        r"\b(Anthropic|OpenAI|Google(\s+DeepMind)?)\s+"
+        r"(trained|made|created|built|developed)\s+me\b",
+        re.IGNORECASE,
+    ),
+    # Both — model name + 模型/助手/系統 suffix (residual after 我是由… match)
+    re.compile(
+        r"(Claude|ChatGPT|Gemini|Bard|Codex|GPT[-\w.]*)\s*(模型|助手|系統)",
+        re.IGNORECASE,
+    ),
+    # Chinese — 作為/身為 + 廠商的 + 模型名
+    re.compile(
+        r"(作為|身為|做為)\s*(Anthropic|OpenAI|Google)?\s*(的)?\s*"
+        r"(Claude|ChatGPT|Gemini|Bard|Codex|GPT[-\w.]*)",
+        re.IGNORECASE,
+    ),
+    # Chinese — (OpenAI|...)(訓練|開發)了?我
+    re.compile(
+        r"(Anthropic|OpenAI|Google)\s*(訓練|開發|製造|創造)(了)?我",
+        re.IGNORECASE,
+    ),
+    # Both — "GPT-4 級別的我 / Claude-level me"
+    re.compile(
+        r"(Claude|ChatGPT|Gemini|GPT[-\w.]*)\s*(級別|等級)?的我",
+        re.IGNORECASE,
+    ),
+    # Self-referring product URLs
+    re.compile(
+        r"\b(claude\.ai|chat\.openai\.com|chatgpt\.com|gemini\.google\.com)\b",
+        re.IGNORECASE,
+    ),
 ]
 
 
@@ -119,7 +158,9 @@ def build_chair_prompt(
     followup_summaries: Optional[List[dict]] = None,
 ) -> str:
     """
-    Build the chair prompt. Guarantees zero AI model names in member sections.
+    Build the chair prompt. Member sections are pre-filtered by filter_self_id
+    (self-identification scrubbed; neutral third-person mentions of AI products
+    in answer content are preserved by design and are not attribution signals).
 
     anon_responses: {label: already-filtered response text}
     member_statuses: {label: "done"|"error"|"running"}
