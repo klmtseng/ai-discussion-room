@@ -4,8 +4,10 @@ AI Parliament — HTTP Server
 Python 3 stdlib only. Zero third-party dependencies.
 
 Usage:
-  python3 server.py            # real CLI mode
-  python3 server.py --mock     # mock mode (no real CLI calls, for testing)
+  python3 server.py                 # real CLI mode, port 8930
+  python3 server.py --mock          # mock mode (no real CLI calls, for testing)
+  python3 server.py --port 8931     # custom port
+  python3 server.py --mock --port 8931
 """
 import json
 import os
@@ -22,7 +24,14 @@ if "--mock" in sys.argv:
 import adapters  # noqa: E402  (mock env set above)
 import parliament  # noqa: E402
 
+# Parse --port <n> from argv
 PORT = 8930
+_port_idx = next((i for i, a in enumerate(sys.argv) if a == "--port"), None)
+if _port_idx is not None and _port_idx + 1 < len(sys.argv):
+    try:
+        PORT = int(sys.argv[_port_idx + 1])
+    except ValueError:
+        pass
 
 _sessions: dict = {}
 _sessions_lock = threading.Lock()
@@ -247,8 +256,9 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             member = data.get("member", "")
             question = (data.get("question") or "").strip()
-            if member not in ("A", "B", "C") or not question:
-                self._send_json(400, {"error": "member (A/B/C) and question required"})
+            valid_labels = list(session.get("members", {}).keys())
+            if member not in valid_labels or not question:
+                self._send_json(400, {"error": f"member ({'/'.join(valid_labels)}) and question required"})
                 return
             config = _load_config()
             fid = parliament.add_followup(session, member, question, _sessions_lock)
@@ -291,6 +301,7 @@ if __name__ == "__main__":
     mock_tag = " [MOCK 模式]" if "--mock" in sys.argv else ""
     print(f"AI 眾議院啟動{mock_tag} → http://localhost:{PORT}")
     print(f"PIN: {_PIN}  (存於 runs/pin.txt，或設 PARLIAMENT_PIN 環境變數)")
+    print(f"使用 --port <n> 可自訂端口（測試用 8931）")
     server = HTTPServer(("", PORT), _Handler)
     try:
         server.serve_forever()
