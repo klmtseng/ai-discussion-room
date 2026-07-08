@@ -18,9 +18,9 @@
   --accent2:    #c86420;
   --text-light: #f0e0c0;
   --text-muted: #a08060;
-  --ca:         #5baaff;
-  --cb:         #5bd45b;
-  --cc:         #ff8a5b;
+  --ca:         #e07830;
+  --cb:         #10b8a0;
+  --cc:         #8060e8;
   --chair:      #ffe066;
   --ok:         #5bd45b;
   --err:        #ff5b5b;
@@ -34,7 +34,7 @@ html, body {
   touch-action: none;
 }
 
-/* ── Game canvas wrapper ── */
+/* ── Game canvas wrapper — fill entire viewport ── */
 #game-wrap {
   position: fixed; inset: 0;
   display: flex; align-items: center; justify-content: center;
@@ -206,6 +206,7 @@ html, body {
   pointer-events: none; z-index: 200;
   display: flex; justify-content: space-between;
   padding: 0.4rem 0.7rem;
+  flex-wrap: wrap; gap: 0.2rem;
 }
 .hud-badge {
   font-size: 0.62rem; font-weight: 700; padding: 2px 6px;
@@ -215,8 +216,25 @@ html, body {
 .hud-badge.done    { background: #0a3a0a; color: var(--ok); }
 .hud-badge.error   { background: #3a0a0a; color: var(--err); }
 .hud-badge.pending { background: var(--warm-dark); color: var(--text-muted); }
-#hud-left { display: flex; gap: 0.3rem; align-items: center; }
+#hud-left { display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; }
 #hud-right { display: flex; gap: 0.3rem; align-items: center; }
+
+/* ── AI Legend ── */
+#hud-legend {
+  position: fixed; top: 2.2rem; left: 0; right: 0;
+  pointer-events: none; z-index: 199;
+  padding: 0.2rem 0.7rem;
+  display: flex; gap: 0.5rem; flex-wrap: wrap;
+}
+.legend-item {
+  font-size: 0.58rem; color: var(--text-muted);
+  display: flex; align-items: center; gap: 2px;
+}
+.legend-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  display: inline-block;
+}
+
 #hud-hint {
   position: fixed; bottom: 0; left: 0; right: 0;
   pointer-events: none; z-index: 200;
@@ -251,14 +269,14 @@ html, body {
 <div id="hud">
   <div id="hud-left">
     <span style="font-size:0.75rem; font-weight:900; color:var(--accent); margin-right:4px;">⚖ 眾議院</span>
-    <span class="hud-badge pending" id="badgeA">A 待機</span>
-    <span class="hud-badge pending" id="badgeB">B 待機</span>
-    <span class="hud-badge pending" id="badgeC">C 待機</span>
+    <!-- Member badges injected dynamically by renderHud() -->
   </div>
   <div id="hud-right">
     <span class="hud-badge pending" id="badgeChair">主席 待機</span>
   </div>
 </div>
+<!-- AI identity legend — shows after first session data arrives -->
+<div id="hud-legend"></div>
 <div id="hud-hint">點委員桌→深聊 ｜ 點講台→提問/總結 ｜ 點地板→移動</div>
 
 <!-- Game canvas -->
@@ -292,8 +310,12 @@ let PIN = localStorage.getItem('parliament_pin') || '';
 let sessionId = null;
 let pollTimer = null;
 let sessionData = null;
-let sheetMode = null; // 'member-A','member-B','member-C','chair'
+let sheetMode = null; // 'member-A','member-B',...,'chair'
 let gameScene = null; // reference to Phaser scene
+
+// Dynamic member color map — populated from sessionData
+let MEMBER_COLORS = {};
+let MEMBER_LABELS = []; // ordered list of labels
 
 // ═══════════════════════════════════════════════════════════════
 // PIN GATE
@@ -301,14 +323,12 @@ let gameScene = null; // reference to Phaser scene
 function verifyPin() {
   const v = document.getElementById('pinInput').value.trim();
   if (!v) return;
-  // Test by hitting a harmless API endpoint
   fetch(`/api/parliament/___probe`, {
     headers: { 'X-Parliament-Pin': v }
   }).then(r => {
     if (r.status === 401) {
       document.getElementById('pin-err').textContent = 'PIN 錯誤，請再試一次';
     } else {
-      // 404 = correct PIN, session not found (expected)
       PIN = v;
       localStorage.setItem('parliament_pin', PIN);
       document.getElementById('pin-overlay').classList.add('hidden');
@@ -318,7 +338,6 @@ function verifyPin() {
   });
 }
 
-// Auto-verify saved PIN on load
 window.addEventListener('DOMContentLoaded', () => {
   if (PIN) {
     fetch('/api/parliament/___probe', { headers: { 'X-Parliament-Pin': PIN } })
@@ -365,9 +384,10 @@ async function submitQuestion() {
   if (!q) return;
   document.getElementById('submitBtn').disabled = true;
   document.getElementById('resummarizeBtn').style.display = 'none';
-  sessionId = null; sessionData = null;
-  setBadge('A','pending','A 待機'); setBadge('B','pending','B 待機');
-  setBadge('C','pending','C 待機'); setBadge('Chair','pending','主席 待機');
+  sessionId = null; sessionData = null; MEMBER_LABELS = [];
+  setBadge('Chair','pending','主席 待機');
+  document.getElementById('hud-left').innerHTML =
+    '<span style="font-size:0.75rem; font-weight:900; color:var(--accent); margin-right:4px;">⚖ 眾議院</span>';
   if (gameScene) gameScene.resetMemberStates();
 
   const { status, data } = await apiPost('/api/parliament', { question: q });
@@ -387,7 +407,20 @@ async function pollSession() {
   const { status, data } = await apiGet(`/api/parliament/${sessionId}`);
   if (status !== 200) return;
   sessionData = data;
+
+  // Initialize member labels & colors from first data payload
+  if (MEMBER_LABELS.length === 0 && data.members) {
+    MEMBER_LABELS = Object.keys(data.members);
+    MEMBER_COLORS = {};
+    for (const [label, m] of Object.entries(data.members)) {
+      MEMBER_COLORS[label] = m.color || '#888888';
+    }
+    renderHudStructure(data);
+    if (gameScene) gameScene.initMembers(data);
+  }
+
   renderHud(data);
+  renderLegend(data);
   if (gameScene) gameScene.updateFromSession(data);
   if (sheetMode && sheetMode.startsWith('member-')) {
     refreshMemberSheet(sheetMode.replace('member-', ''));
@@ -418,27 +451,60 @@ function setBadge(who, cls, text) {
   el.className = `hud-badge ${cls}`;
   el.textContent = text;
 }
-function renderHud(d) {
-  for (const label of ['A','B','C']) {
-    const m = d.members[label];
-    if (m.status === 'done')       setBadge(label, 'done',    `${label} ✓`);
-    else if (m.status === 'error') setBadge(label, 'error',   `${label} ✗`);
-    else                            setBadge(label, 'running', `${label} …`);
+
+function renderHudStructure(d) {
+  // Build initial HUD badges for all members
+  const left = document.getElementById('hud-left');
+  left.innerHTML = '<span style="font-size:0.75rem; font-weight:900; color:var(--accent); margin-right:4px;">⚖ 眾議院</span>';
+  for (const label of MEMBER_LABELS) {
+    const span = document.createElement('span');
+    span.id = `badge${label}`;
+    span.className = 'hud-badge pending';
+    span.textContent = `${label} 待機`;
+    left.appendChild(span);
   }
-  if (d.chair_status === 'done')       setBadge('Chair','done',   '主席 ✓');
+}
+
+function renderHud(d) {
+  for (const label of MEMBER_LABELS) {
+    const m = d.members[label];
+    if (!m) continue;
+    const md = m.model_display ? ` (${m.model_display.split(' ')[0]})` : '';
+    if (m.status === 'done')       setBadge(label, 'done',    `${label}✓${md}`);
+    else if (m.status === 'error') setBadge(label, 'error',   `${label}✗`);
+    else                            setBadge(label, 'running', `${label}…`);
+  }
+  if (d.chair_status === 'done')         setBadge('Chair','done',   '主席 ✓');
   else if (d.chair_status === 'running') setBadge('Chair','running','主席 …');
   else                                   setBadge('Chair','pending','主席 待機');
+}
+
+function renderLegend(d) {
+  const el = document.getElementById('hud-legend');
+  if (!d || !d.members) { el.innerHTML = ''; return; }
+  const items = MEMBER_LABELS.map(label => {
+    const m = d.members[label];
+    const color = m ? (m.color || '#888') : '#888';
+    const md = m ? (m.model_display || label) : label;
+    return `<span class="legend-item"><span class="legend-dot" style="background:${color}"></span>${label}=${md}</span>`;
+  });
+  el.innerHTML = items.join('');
 }
 
 // ═══════════════════════════════════════════════════════════════
 // BOTTOM SHEET
 // ═══════════════════════════════════════════════════════════════
-const COLOR_MAP = { A: '#5baaff', B: '#5bd45b', C: '#ff8a5b', Chair: '#ffe066' };
+function _memberDisplayName(label) {
+  if (!sessionData || !sessionData.members || !sessionData.members[label]) return `委員 ${label}`;
+  const md = sessionData.members[label].model_display;
+  return md ? `委員 ${label}（${md}）` : `委員 ${label}`;
+}
 
 function openMemberSheet(label) {
   sheetMode = `member-${label}`;
-  document.getElementById('sheet-title').textContent = `委員 ${label}`;
-  document.getElementById('sheet-title').style.color = COLOR_MAP[label] || '#fff';
+  const color = MEMBER_COLORS[label] || '#fff';
+  document.getElementById('sheet-title').textContent = _memberDisplayName(label);
+  document.getElementById('sheet-title').style.color = color;
   document.getElementById('sheet-input-row').style.display = 'flex';
   document.getElementById('sheet-qa-row').style.display = 'none';
   document.getElementById('sheet').classList.add('open');
@@ -448,10 +514,9 @@ function openMemberSheet(label) {
 function openChairSheet() {
   sheetMode = 'chair';
   document.getElementById('sheet-title').textContent = '主席講台';
-  document.getElementById('sheet-title').style.color = COLOR_MAP['Chair'];
+  document.getElementById('sheet-title').style.color = '#ffe066';
   document.getElementById('sheet-input-row').style.display = 'none';
   document.getElementById('sheet-qa-row').style.display = 'block';
-  // Show resummarize only if session done
   const rb = document.getElementById('resummarizeBtn');
   rb.style.display = (sessionData && sessionData.status === 'done') ? '' : 'none';
   rb.disabled = !(sessionData && sessionData.status === 'done' && sessionData.chair_status === 'done');
@@ -472,6 +537,7 @@ function refreshMemberSheet(label) {
   }
   const m = sessionData.members[label];
   const msgs = [];
+  const memberName = _memberDisplayName(label);
 
   if (m && m.response) {
     msgs.push({ role:'user', text: sessionData.question });
@@ -491,12 +557,12 @@ function refreshMemberSheet(label) {
     else if (f.response) msgs.push({ role:'ai', text: f.response });
   }
 
-  content.innerHTML = msgs.map(m => {
-    const cls = m.role === 'user' ? 'user' : 'ai';
-    const lbl = m.role === 'user' ? '您' : `委員 ${label}`;
-    const body = m.thinking
-      ? `<em class="bubble thinking">${escHtml(m.text)}</em>`
-      : mdToHtml(m.text);
+  content.innerHTML = msgs.map(msg => {
+    const cls = msg.role === 'user' ? 'user' : 'ai';
+    const lbl = msg.role === 'user' ? '您' : memberName;
+    const body = msg.thinking
+      ? `<em class="bubble thinking">${escHtml(msg.text)}</em>`
+      : mdToHtml(msg.text);
     return `<div class="bubble ${cls}"><div class="bubble-label">${lbl}</div>${body}</div>`;
   }).join('');
   content.scrollTop = content.scrollHeight;
@@ -513,7 +579,17 @@ function refreshChairSheet() {
   }
   let html = '';
   if (sessionData.chair_status === 'done' && sessionData.chair_summary) {
-    html = `<div class="bubble ai"><div class="bubble-label">主席總結</div>${mdToHtml(sessionData.chair_summary)}</div>`;
+    // Upgrade 2: decorate 委員X → 委員X(ModelName) in chair summary display only (not in raw data)
+    let summary = sessionData.chair_summary;
+    if (sessionData.members) {
+      for (const [label, m] of Object.entries(sessionData.members)) {
+        if (m.model_display) {
+          const re = new RegExp(`委員${label}(?!（)`, 'g');
+          summary = summary.replace(re, `委員${label}（${m.model_display}）`);
+        }
+      }
+    }
+    html = `<div class="bubble ai"><div class="bubble-label">主席總結</div>${mdToHtml(summary)}</div>`;
   } else if (sessionData.chair_status === 'running') {
     html = `<div class="bubble ai thinking"><div class="bubble-label">主席</div>整理中…</div>`;
   } else {
@@ -541,7 +617,6 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 function mdToHtml(md) {
-  // Minimal markdown → HTML (no library, safe)
   let s = escHtml(md);
   s = s.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   s = s.replace(/^## (.+)$/gm, '<h2>$1</h2>');
@@ -554,66 +629,146 @@ function mdToHtml(md) {
   return '<p>' + s + '</p>';
 }
 
+// Parse hex color string to Phaser integer
+function hexToInt(hex) {
+  return parseInt(hex.replace('#',''), 16);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // PHASER 3 GAME
 // ═══════════════════════════════════════════════════════════════
 
-// Tile dimensions for Kenney packed tilemaps (no spacing)
-const TW = 16; // tile width
-const TH = 16; // tile height
-const SCALE = 3; // render scale
+// Tile dimensions — Kenney Tiny Dungeon packed (16px, no spacing)
+const TW = 16;
+const TH = 16;
 
 // Room layout in tiles
-const COLS = 18;
-const ROWS = 14;
+const COLS = 20;
+const ROWS = 16;
 
-// Tile indices from tilemap_town.png (12 tiles wide, 16px each)
-// Row 0 (outdoor), Row 1-2 (walls/doors), Row 3+ (interior)
-// Based on Kenney Tiny Town visual layout:
-const T = {
-  FLOOR_WOOD: 84,   // warm wood floor (~row 7, col 0 = 84)
-  FLOOR_CARPET: 85, // carpet
-  FLOOR_DARK: 96,   // darker floor
-  WALL_H: 12,       // horizontal wall
-  WALL_V: 24,       // vertical wall
-  CORNER_TL: 13,
-  CORNER_TR: 14,
-  CORNER_BL: 25,
-  CORNER_BR: 26,
-  DOOR: 15,
-  WINDOW: 27,
-  DESK: 60,
-  CHAIR_DOWN: 72,
-  CHAIR_UP: 73,
-  PLANT: 48,
-  RUG_TL: 36, RUG_TR: 37, RUG_BL: 48, RUG_BR: 49,
-  PODIUM: 61,
-  EMPTY: 0,
+// Dynamic SCALE: fill the viewport as much as possible, pixel-snapped
+function computeScale() {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const sx = W / (COLS * TW);
+  const sy = H / (ROWS * TH);
+  return Math.max(1, Math.floor(Math.min(sx, sy)));
+}
+let SCALE = computeScale();
+
+// Kenney Tiny Dungeon packed tilemap — 12 cols × 11 rows, 16px each (192×176)
+// Key tile indices (row * 12 + col):
+// Rows 0-5: dungeon tiles (floor, walls, decorations)
+// Rows 6-10: character/monster sprites
+const DT = {
+  FLOOR_STONE:  0,   // stone floor
+  FLOOR_WOOD:   1,   // wood floor
+  FLOOR_DIRT:   2,
+  WALL_TOP:    12,   // wall pieces
+  WALL_MID:    24,
+  WALL_SIDE:   36,
+  DOOR:        48,
+  CRATE:       60,
+  BARREL:      61,
+  CHEST:       72,
+  TORCH:       73,
+  // Characters (rows 7-10 in dungeon tilemap)
+  CHAR_KNIGHT: 84,   // row 7 col 0 — knight (player)
+  CHAR_MAGE:   85,   // row 7 col 1 — mage
+  CHAR_ROGUE:  86,   // row 7 col 2 — rogue
+  CHAR_PRIEST: 87,   // row 7 col 3 — priest (chair)
+  CHAR_ORC:    88,
+  CHAR_GOBLIN: 89,
+  CHAR_SLIME:  90,
+  CHAR_DEMON:  91,
+  CHAR_DRAGON: 92,
+  CHAR_GOLEM:  93,
+  CHAR_WITCH:  94,
+  CHAR_ELF:    95,
+};
+
+// Character tile assignments per role
+const ROLE_CHAR = {
+  player: DT.CHAR_KNIGHT,
+  chair:  DT.CHAR_PRIEST,
+  // Members get tiles 85..95 round-robin
+};
+
+// Emblem drawing — 8x8 pixel badge per AI identity
+// Each emblem is a function(g, x, y, color) that draws on a Phaser Graphics object
+const EMBLEMS = {
+  star: (g, x, y, c) => {
+    // 8-point star (✳) — 4 rotated 2px lines crossing center
+    g.fillStyle(c, 1);
+    // Horizontal bar
+    g.fillRect(x+1, y+3, 6, 2);
+    // Vertical bar
+    g.fillRect(x+3, y+1, 2, 6);
+    // Diagonal TL-BR
+    g.fillRect(x+1, y+1, 2, 2);
+    g.fillRect(x+5, y+5, 2, 2);
+    // Diagonal TR-BL
+    g.fillRect(x+5, y+1, 2, 2);
+    g.fillRect(x+1, y+5, 2, 2);
+  },
+  knot: (g, x, y, c) => {
+    // Rope knot (loop shape)
+    g.fillStyle(c, 1);
+    g.fillRect(x+2, y+1, 4, 2);
+    g.fillRect(x+1, y+2, 6, 1);
+    g.fillRect(x+1, y+5, 6, 1);
+    g.fillRect(x+2, y+6, 4, 1);
+    g.fillRect(x+1, y+3, 1, 2);
+    g.fillRect(x+6, y+3, 1, 2);
+    // Inner break (knot hole)
+    g.fillStyle(0x000000, 0.8);
+    g.fillRect(x+3, y+3, 2, 2);
+  },
+  quad: (g, x, y, c) => {
+    // Four-pointed star (◆ rotated)
+    g.fillStyle(c, 1);
+    g.fillRect(x+3, y+0, 2, 2);
+    g.fillRect(x+2, y+2, 4, 1);
+    g.fillRect(x+0, y+3, 8, 2);
+    g.fillRect(x+2, y+5, 4, 1);
+    g.fillRect(x+3, y+6, 2, 2);
+  },
+  dot: (g, x, y, c) => {
+    g.fillStyle(c, 1);
+    g.fillRect(x+2, y+2, 4, 4);
+  },
 };
 
 class ParliamentScene extends Phaser.Scene {
   constructor() { super({ key: 'Parliament' }); }
 
   preload() {
-    this.load.image('town', '/assets/tilemap_town.png');
-    this.load.image('dungeon', '/assets/tilemap_dungeon.png');
+    // Load all three Kenney tilesets (already vendored)
+    // Tiny Dungeon: 12 cols × 11 rows, 16px packed — used for characters & walls
+    this.load.spritesheet('dungeon', '/assets/tilemap_dungeon.png', {
+      frameWidth: 16, frameHeight: 16,
+    });
+    // Tiny Town: 12 cols × 11 rows, 16px packed — used for floor/furniture
+    this.load.spritesheet('town', '/assets/tilemap_town.png', {
+      frameWidth: 16, frameHeight: 16,
+    });
   }
 
   create() {
     gameScene = this;
-    const W = this.scale.width;
-    const H = this.scale.height;
+    this._memberData = {};  // {label: {model_display, color, emblem}}
+    this._memberLabels = [];
+    this._chars = {};
+    this._deskRects = {};
+    this._bubbles = {};
 
-    // ── Draw room directly with graphics + colored rectangles ──
-    // We use Graphics to build a warm pixel room without needing
-    // exact tile indices (which require visual inspection)
     this._buildRoom();
-    this._buildFurniture();
-    this._buildCharacters();
-    this._buildBubbles();
+    this._buildFurniture([]);      // empty until we get member data
+    this._buildChairChar();
+    this._buildPlayerChar();
+    this._buildBubbles([]);
     this._setupInput();
 
-    // Keyboard
     this.cursors = this.input.keyboard.createCursorKeys();
     this.wasd = this.input.keyboard.addKeys({
       up: Phaser.Input.Keyboard.KeyCodes.W,
@@ -621,166 +776,182 @@ class ParliamentScene extends Phaser.Scene {
       left: Phaser.Input.Keyboard.KeyCodes.A,
       right: Phaser.Input.Keyboard.KeyCodes.D,
     });
-
-    this.playerTarget = null;  // {x,y} tile target
+    this.playerTarget = null;
     this.playerMoveTimer = 0;
   }
 
-  _roomX(col) { return col * TW * SCALE; }
-  _roomY(row) { return row * TH * SCALE; }
+  _px(col) { return col * TW * SCALE; }
+  _py(row) { return row * TH * SCALE; }
+
+  // Draw a tile from a spritesheet at a given pixel position
+  _drawTile(sheet, frame, col, row, tint) {
+    const img = this.add.image(this._px(col), this._py(row), sheet, frame)
+      .setOrigin(0, 0)
+      .setScale(SCALE);
+    if (tint !== undefined) img.setTint(tint);
+    return img;
+  }
 
   _buildRoom() {
     const g = this.add.graphics();
     const W = this.scale.width;
     const H = this.scale.height;
 
-    // Background outside room
+    // Fill entire viewport background
     g.fillStyle(0x1a100a);
     g.fillRect(0, 0, W, H);
 
-    // Floor — warm wood
-    const floorX = TW * SCALE;
-    const floorY = TH * SCALE * 2;
-    const floorW = (COLS - 2) * TW * SCALE;
-    const floorH = (ROWS - 4) * TH * SCALE;
-
-    // Main floor tiles (pixelated stripes for wood effect)
+    // Wood floor tiles
     for (let col = 1; col < COLS - 1; col++) {
-      for (let row = 2; row < ROWS - 2; row++) {
+      for (let row = 1; row < ROWS - 1; row++) {
         const shade = ((col + row) % 3 === 0) ? 0x6b4423 :
                       ((col + row) % 3 === 1) ? 0x7a5230 : 0x704a28;
         g.fillStyle(shade);
-        g.fillRect(col * TW * SCALE, row * TH * SCALE, TW * SCALE, TH * SCALE);
+        g.fillRect(this._px(col), this._py(row), TW * SCALE, TH * SCALE);
       }
     }
 
-    // Carpet (center area)
-    const carpetColors = [0x5c3060, 0x6b3870, 0x5c3060];
+    // Center carpet
     for (let col = 3; col < COLS - 3; col++) {
       for (let row = 4; row < ROWS - 4; row++) {
-        const ci = ((col - 3 + row - 4)) % carpetColors.length;
-        g.fillStyle(carpetColors[ci]);
-        g.fillRect(col * TW * SCALE, row * TH * SCALE, TW * SCALE - 1, TH * SCALE - 1);
+        const ci = ((col + row)) % 3;
+        const c = [0x5c2060, 0x6b2870, 0x5c2060][ci];
+        g.fillStyle(c);
+        g.fillRect(this._px(col), this._py(row), TW * SCALE - 1, TH * SCALE - 1);
       }
     }
 
-    // Walls
-    g.fillStyle(0x3d2510);
-    // Top wall
-    for (let col = 0; col < COLS; col++) {
-      g.fillRect(col * TW * SCALE, TH * SCALE, TW * SCALE, TH * SCALE);
-      if (col % 2 === 0) { // brick pattern
-        g.fillStyle(0x2d1a08);
-        g.fillRect(col * TW * SCALE, TH * SCALE + 1, TW * SCALE, 2);
-        g.fillStyle(0x3d2510);
-      }
-    }
-    // Bottom wall
+    // Walls (top, bottom, left, right borders)
     for (let col = 0; col < COLS; col++) {
       g.fillStyle(0x3d2510);
-      g.fillRect(col * TW * SCALE, (ROWS - 2) * TH * SCALE, TW * SCALE, TH * SCALE);
+      g.fillRect(this._px(col), 0, TW * SCALE, TH * SCALE); // top
+      g.fillRect(this._px(col), this._py(ROWS - 1), TW * SCALE, TH * SCALE); // bottom
     }
-    // Left wall
     for (let row = 1; row < ROWS - 1; row++) {
       g.fillStyle(0x3d2510);
-      g.fillRect(0, row * TH * SCALE, TW * SCALE, TH * SCALE);
-    }
-    // Right wall
-    for (let row = 1; row < ROWS - 1; row++) {
-      g.fillStyle(0x3d2510);
-      g.fillRect((COLS - 1) * TW * SCALE, row * TH * SCALE, TW * SCALE, TH * SCALE);
+      g.fillRect(0, this._py(row), TW * SCALE, TH * SCALE); // left
+      g.fillRect(this._px(COLS - 1), this._py(row), TW * SCALE, TH * SCALE); // right
     }
 
-    // Door at bottom center
-    const doorCol = Math.floor(COLS / 2);
+    // Brick texture on top wall
+    for (let col = 0; col < COLS; col += 2) {
+      g.fillStyle(0x2d1a08);
+      g.fillRect(this._px(col), 2, TW * SCALE, 2);
+    }
+
+    // Door (bottom center)
+    const doorCol = Math.floor(COLS / 2) - 1;
     g.fillStyle(0x5a3820);
-    g.fillRect(doorCol * TW * SCALE, (ROWS - 2) * TH * SCALE, TW * SCALE * 2, TH * SCALE);
+    g.fillRect(this._px(doorCol), this._py(ROWS - 1), TW * SCALE * 2, TH * SCALE);
     g.fillStyle(0x8b6040);
-    g.fillRect(doorCol * TW * SCALE + 3, (ROWS - 2) * TH * SCALE + 3, TW * SCALE * 2 - 6, TH * SCALE - 6);
+    g.fillRect(this._px(doorCol) + 3, this._py(ROWS - 1) + 3, TW * SCALE * 2 - 6, TH * SCALE - 6);
 
     // Windows on top wall
-    for (const wc of [3, 7, 11, 15]) {
-      if (wc < COLS - 1) {
+    for (const wc of [2, 6, 10, 14, 17]) {
+      if (wc > 0 && wc < COLS - 1) {
         g.fillStyle(0x7db8e8);
-        g.fillRect(wc * TW * SCALE + 2, TH * SCALE + 2, TW * SCALE - 4, TH * SCALE - 4);
+        g.fillRect(this._px(wc) + 2, 2, TW * SCALE - 4, TH * SCALE - 4);
         g.fillStyle(0x5090c0);
-        g.fillRect(wc * TW * SCALE + 2, TH * SCALE + TH * SCALE / 2 - 1, TW * SCALE - 4, 2);
-        g.fillRect(wc * TW * SCALE + TW * SCALE / 2 - 1, TH * SCALE + 2, 2, TH * SCALE - 4);
+        g.fillRect(this._px(wc) + 2, TH * SCALE / 2 - 1, TW * SCALE - 4, 2);
+        g.fillRect(this._px(wc) + TW * SCALE / 2 - 1, 2, 2, TH * SCALE - 4);
       }
     }
 
-    // Warm lighting overlay (subtle gradient)
-    g.fillStyle(0xf0a020, 0.04);
-    g.fillRect(0, 0, W, H);
+    // Corner plants
+    this._drawPlant(g, 1, 1);
+    this._drawPlant(g, COLS - 2, 1);
+    this._drawPlant(g, 1, ROWS - 3);
+    this._drawPlant(g, COLS - 2, ROWS - 3);
 
     this._roomGraphics = g;
   }
 
-  _buildFurniture() {
+  _drawPlant(g, col, row) {
+    const x = this._px(col), y = this._py(row);
+    const s = SCALE;
+    g.fillStyle(0x8b4520);
+    g.fillRect(x + 4*s, y + 8*s, 8*s, 6*s);
+    g.fillStyle(0x2a8030);
+    g.fillRect(x + 2*s, y + 3*s, 12*s, 7*s);
+    g.fillStyle(0x38a040);
+    g.fillRect(x + 4*s, y, 8*s, 5*s);
+  }
+
+  _buildFurniture(labels) {
+    if (this._furnitureGraphics) this._furnitureGraphics.destroy();
+    if (this._furnitureTexts) this._furnitureTexts.forEach(t => t.destroy());
+    this._furnitureTexts = [];
+
     const g = this.add.graphics();
+    this._furnitureGraphics = g;
 
-    // ── Podium / Chair platform (top center) ──
-    const podX = Math.floor(COLS / 2 - 1);
-    const podY = 2;
-    this._drawDesk(g, podX, podY, 3, 1, 0x8b6830, 0xc8a060, '⚖', 0xffe066);
-    this._podiumRect = { col: podX, row: podY, w: 3, h: 1 };
+    // Podium (top center, spans 3 cols)
+    const podCol = Math.floor(COLS / 2) - 1;
+    const podRow = 2;
+    this._drawDesk(g, podCol, podRow, 3, 1, 0x7a5c1a, 0xb08020, '⚖', 0xffe066);
+    this._podiumRect = { col: podCol, row: podRow, w: 3, h: 2 };
 
-    // ── Member desks (3 desks in middle row) ──
-    const deskY = 6;
-    const deskPositions = [
-      { col: 2,  label: 'A', color: 0x1040a0, nameColor: 0x5baaff },
-      { col: 8,  label: 'B', color: 0x104010, nameColor: 0x5bd45b },
-      { col: 14, label: 'C', color: 0x801808, nameColor: 0xff8a5b },
-    ];
+    if (labels.length === 0) return;
+
+    // Dynamic desk layout: up to 3 per row, center each row
+    const n = labels.length;
+    const rowSize = n <= 3 ? n : Math.ceil(n / 2);
+    const deskRows = [labels.slice(0, rowSize)];
+    if (n > rowSize) deskRows.push(labels.slice(rowSize));
 
     this._deskRects = {};
-    for (const d of deskPositions) {
-      this._drawDesk(g, d.col, deskY, 3, 1, d.color, d.color + 0x203040, d.label, d.nameColor);
-      // Chair behind desk
-      this._drawChair(g, d.col + 1, deskY - 1);
-      this._deskRects[d.label] = { col: d.col, row: deskY, w: 3, h: 2, label: d.label };
+    const deskStartRow = 6;
+    const deskRowGap = 4;
+
+    for (let ri = 0; ri < deskRows.length; ri++) {
+      const rowLabels = deskRows[ri];
+      const rn = rowLabels.length;
+      const totalW = rn * 3 + (rn - 1) * 1; // 3 cols per desk, 1 col gap
+      const startCol = Math.floor((COLS - totalW) / 2);
+      const deskRow = deskStartRow + ri * deskRowGap;
+
+      for (let ci = 0; ci < rn; ci++) {
+        const label = rowLabels[ci];
+        const md = this._memberData[label] || {};
+        const hexColor = md.color || '#5b80ff';
+        const intColor = hexToInt(hexColor);
+        const col = startCol + ci * 4;
+        this._drawDesk(g, col, deskRow, 3, 1, intColor & 0x404040 ? intColor - 0x202020 : 0x203060,
+                       intColor, label, intColor);
+        this._drawChair(g, col + 1, deskRow - 1);
+        this._deskRects[label] = { col, row: deskRow, w: 3, h: 2, label };
+
+        // Draw AI emblem badge on desk
+        const emblem = md.emblem || 'dot';
+        const emblFn = EMBLEMS[emblem] || EMBLEMS.dot;
+        // Badge at center of desk surface
+        const bx = this._px(col) + (3 * TW * SCALE / 2) - 4 * SCALE;
+        const by = this._py(deskRow) + TH * SCALE / 2 - 4 * SCALE;
+        emblFn(g, bx, by, intColor);
+      }
     }
-
-    // Plants in corners
-    this._drawPlant(g, 1, 2);
-    this._drawPlant(g, COLS - 2, 2);
-    this._drawPlant(g, 1, ROWS - 4);
-    this._drawPlant(g, COLS - 2, ROWS - 4);
-
-    this._furnitureGraphics = g;
   }
 
   _drawDesk(g, col, row, w, h, baseColor, topColor, label, labelColor) {
-    const x = col * TW * SCALE;
-    const y = row * TH * SCALE;
-    const W = w * TW * SCALE;
-    const H = h * TH * SCALE;
-    // Shadow
+    const x = this._px(col), y = this._py(row);
+    const W = w * TW * SCALE, H = h * TH * SCALE;
     g.fillStyle(0x000000, 0.3);
     g.fillRect(x + 2, y + 2, W, H);
-    // Base
     g.fillStyle(baseColor);
     g.fillRect(x, y, W, H);
-    // Top surface
     g.fillStyle(topColor);
     g.fillRect(x + 1, y + 1, W - 2, H - 4);
-    // Label pixel text (just colored mark)
-    if (label) {
-      const lx = x + W / 2;
-      const ly = y + H / 2;
-      // Small colored badge on desk
-      g.fillStyle(labelColor);
-      g.fillRect(lx - 4, ly - 2, 8, 4);
-    }
-    // Store text label separately using Phaser text
-    const style = { fontSize: `${SCALE * 5}px`, color: '#' + labelColor.toString(16).padStart(6,'0'),
-                    fontFamily: 'monospace', resolution: 2 };
-    const t = this.add.text(x + W / 2, y + H / 2, label, style).setOrigin(0.5, 0.5);
+    // Label text on desk
+    const lc = '#' + (labelColor & 0xffffff).toString(16).padStart(6, '0');
+    const t = this.add.text(x + W / 2, y + H * 0.3, label, {
+      fontSize: `${SCALE * 5}px`, color: lc, fontFamily: 'monospace', resolution: 2,
+    }).setOrigin(0.5, 0.5).setDepth(2);
+    this._furnitureTexts.push(t);
   }
 
   _drawChair(g, col, row) {
-    const x = col * TW * SCALE + TW * SCALE / 4;
-    const y = row * TH * SCALE + TH * SCALE / 4;
+    const x = this._px(col) + TW * SCALE / 4;
+    const y = this._py(row) + TH * SCALE / 4;
     const s = TW * SCALE / 2;
     g.fillStyle(0x4a2a10);
     g.fillRect(x, y, s, s);
@@ -788,88 +959,102 @@ class ParliamentScene extends Phaser.Scene {
     g.fillRect(x + 1, y + 1, s - 2, s / 2);
   }
 
-  _drawPlant(g, col, row) {
-    const x = col * TW * SCALE;
-    const y = row * TH * SCALE;
-    // Pot
-    g.fillStyle(0x8b4520);
-    g.fillRect(x + 4, y + 8, 8, 6);
-    // Leaves
-    g.fillStyle(0x2a8030);
-    g.fillRect(x + 2, y + 3, 12, 7);
-    g.fillStyle(0x38a040);
-    g.fillRect(x + 4, y, 8, 5);
+  _buildChairChar() {
+    const podCol = Math.floor(COLS / 2);
+    const podRow = 3;
+    this._chars['chair'] = this._createSpriteChar(podCol, podRow, DT.CHAR_PRIEST, 0xffe066, '⚖', 'star');
   }
 
-  _buildCharacters() {
-    // Character positions
-    this._chars = {};
-
-    // Chair (at podium)
-    const podMid = Math.floor(COLS / 2);
-    this._chars['chair'] = this._createChar(podMid, 3, 0xffe066, '主');
-
-    // Members at desks
-    const memberPos = { A: { col: 3, row: 7 }, B: { col: 9, row: 7 }, C: { col: 15, row: 7 } };
-    for (const [label, pos] of Object.entries(memberPos)) {
-      const color = { A: 0x5baaff, B: 0x5bd45b, C: 0xff8a5b }[label];
-      this._chars[label] = this._createChar(pos.col, pos.row, color, label);
-    }
-
-    // Player avatar
+  _buildPlayerChar() {
     this._playerCol = Math.floor(COLS / 2);
     this._playerRow = ROWS - 3;
-    this._playerChar = this._createChar(this._playerCol, this._playerRow, 0xe8a030, '你');
     this._playerAnim = 0;
+    this._chars['player'] = this._createSpriteChar(
+      this._playerCol, this._playerRow, DT.CHAR_KNIGHT, 0xe8a030, '你', null);
+    this._playerCharRef = this._chars['player'];
   }
 
-  _createChar(col, row, color, label) {
-    const g = this.add.graphics();
-    this._drawPixelChar(g, col * TW * SCALE, row * TH * SCALE, color, label);
-    return { col, row, color, label, g };
+  _createSpriteChar(col, row, frame, tint, labelText, emblem) {
+    const x = this._px(col);
+    const y = this._py(row);
+    // Use Kenney dungeon sprite tile as character
+    const sprite = this.add.image(x, y, 'dungeon', frame)
+      .setOrigin(0, 0)
+      .setScale(SCALE)
+      .setDepth(5);
+    if (tint) sprite.setTint(tint);
+
+    // Overlay graphic for emblem badge
+    const eg = this.add.graphics().setDepth(6);
+    if (emblem && EMBLEMS[emblem]) {
+      const bx = x + (TW * SCALE / 2) - 4;
+      const by = y - 4;
+      EMBLEMS[emblem](eg, bx, by, tint || 0xffffff);
+    }
+
+    // Label text above sprite
+    const lt = this.add.text(x + TW * SCALE / 2, y - SCALE * 4, labelText || '', {
+      fontSize: `${SCALE * 4}px`, color: '#ffffff', fontFamily: 'monospace', resolution: 2,
+      backgroundColor: '#1a1008cc', padding: { x: 2, y: 1 },
+    }).setOrigin(0.5, 1).setDepth(7);
+
+    return { col, row, frame, tint, sprite, eg, lt, label: labelText };
   }
 
-  _drawPixelChar(g, px, py, color, label, dir) {
-    g.clear();
-    const s = SCALE;
-    // Shadow
-    g.fillStyle(0x000000, 0.25);
-    g.fillRect(px + s, py + 10 * s, 12 * s, 2 * s);
-    // Body (pixel art character ~14x16px at scale 1)
-    // Feet
-    g.fillStyle(color & 0x404040 ? color - 0x404040 : 0x302010);
-    g.fillRect(px + 4*s, py + 12*s, 3*s, 4*s);
-    g.fillRect(px + 9*s, py + 12*s, 3*s, 4*s);
-    // Torso
-    g.fillStyle(color);
-    g.fillRect(px + 3*s, py + 6*s, 10*s, 6*s);
-    // Arms
-    g.fillStyle(color);
-    g.fillRect(px + 0*s, py + 7*s, 3*s, 4*s);
-    g.fillRect(px + 13*s, py + 7*s, 3*s, 4*s);
-    // Head skin
-    g.fillStyle(0xf5c68a);
-    g.fillRect(px + 4*s, py + 0*s, 8*s, 6*s);
-    // Eyes
-    g.fillStyle(0x202020);
-    g.fillRect(px + 5*s, py + 2*s, 2*s, 2*s);
-    g.fillRect(px + 9*s, py + 2*s, 2*s, 2*s);
-    // Hair / hat color accent
-    g.fillStyle(color);
-    g.fillRect(px + 4*s, py + 0*s, 8*s, 2*s);
+  initMembers(data) {
+    // Build member chars from server data
+    for (const key of Object.keys(this._chars)) {
+      if (key !== 'chair' && key !== 'player') {
+        if (this._chars[key].sprite) this._chars[key].sprite.destroy();
+        if (this._chars[key].eg) this._chars[key].eg.destroy();
+        if (this._chars[key].lt) this._chars[key].lt.destroy();
+      }
+    }
+    this._memberLabels = Object.keys(data.members);
+    this._memberData = {};
+    for (const [label, m] of Object.entries(data.members)) {
+      this._memberData[label] = {
+        model_display: m.model_display || label,
+        color: m.color || '#5b80ff',
+        emblem: m.emblem || 'dot',
+      };
+    }
+
+    // Rebuild furniture with member data
+    this._buildFurniture(this._memberLabels);
+
+    // Create member sprites in desk positions
+    const charFrames = [DT.CHAR_MAGE, DT.CHAR_ROGUE, DT.CHAR_ELF, DT.CHAR_ORC, DT.CHAR_GOBLIN];
+    for (let i = 0; i < this._memberLabels.length; i++) {
+      const label = this._memberLabels[i];
+      const dr = this._deskRects[label];
+      if (!dr) continue;
+      const col = dr.col + 1;
+      const row = dr.row - 1;
+      const md = this._memberData[label];
+      const intColor = hexToInt(md.color);
+      const frame = charFrames[i % charFrames.length];
+      const shortName = md.model_display.split(' ')[0];
+      this._chars[label] = this._createSpriteChar(col, row, frame, intColor, shortName, md.emblem);
+    }
+
+    // Rebuild bubbles for new label set
+    this._buildBubbles(this._memberLabels);
   }
 
-  _buildBubbles() {
+  _buildBubbles(labels) {
+    // Clean up existing
+    for (const key of Object.keys(this._bubbles)) {
+      if (this._bubbles[key].t) this._bubbles[key].t.destroy();
+    }
     this._bubbles = {};
-    for (const key of ['chair','A','B','C']) {
-      const g = this.add.graphics();
+    for (const key of ['chair', 'player', ...labels]) {
       const t = this.add.text(0, 0, '', {
         fontSize: `${SCALE * 4}px`, color: '#ffffff',
         fontFamily: 'monospace', resolution: 2,
         backgroundColor: '#1a1008cc', padding: { x: 3, y: 2 }
       }).setDepth(10);
-      g.setDepth(9);
-      this._bubbles[key] = { g, t, text: '' };
+      this._bubbles[key] = { t, text: '' };
     }
   }
 
@@ -877,26 +1062,27 @@ class ParliamentScene extends Phaser.Scene {
     const b = this._bubbles[key];
     if (!b) return;
     const char = this._chars[key];
-    if (!char) return;
-    const px = char.col * TW * SCALE;
-    const py = char.row * TH * SCALE;
-    b.t.setPosition(px + TW * SCALE / 2, py - 4 * SCALE);
+    if (!char || !char.sprite) return;
+    const px = char.sprite.x;
+    const py = char.sprite.y;
+    b.t.setPosition(px + TW * SCALE / 2, py - 2 * SCALE);
     b.t.setOrigin(0.5, 1);
     b.t.setText(text || '');
     b.t.setStyle({ color: color || '#ffffff' });
   }
 
   resetMemberStates() {
-    for (const key of ['A','B','C','chair']) {
+    for (const key of [...this._memberLabels, 'chair']) {
       this._setBubble(key, '', '#ffffff');
     }
   }
 
   updateFromSession(d) {
-    for (const label of ['A','B','C']) {
+    for (const label of this._memberLabels) {
       const m = d.members[label];
+      if (!m) continue;
       if (m.status === 'running') this._setBubble(label, '…', '#aaaaaa');
-      else if (m.status === 'done') this._setBubble(label, '!', '#5bd45b');
+      else if (m.status === 'done') this._setBubble(label, '✓', '#5bd45b');
       else if (m.status === 'error') this._setBubble(label, 'zzz', '#ff5b5b');
       else this._setBubble(label, '', '#ffffff');
     }
@@ -906,7 +1092,6 @@ class ParliamentScene extends Phaser.Scene {
   }
 
   _setupInput() {
-    // Tap / click on canvas
     this.input.on('pointerdown', (ptr) => {
       const col = Math.floor(ptr.x / (TW * SCALE));
       const row = Math.floor(ptr.y / (TH * SCALE));
@@ -915,26 +1100,21 @@ class ParliamentScene extends Phaser.Scene {
   }
 
   _handleTap(col, row, px, py) {
-    // Check podium
+    // Podium
     const p = this._podiumRect;
-    if (col >= p.col && col < p.col + p.w && row >= p.row && row < p.row + p.h + 1) {
-      openChairSheet();
-      return;
+    if (p && col >= p.col && col < p.col + p.w && row >= p.row && row < p.row + p.h) {
+      openChairSheet(); return;
     }
-    // Chair character
+    // Chair char
     const chair = this._chars['chair'];
-    if (col === chair.col && row === chair.row) {
-      openChairSheet();
-      return;
-    }
-    // Check member desks
+    if (chair && col === chair.col && row === chair.row) { openChairSheet(); return; }
+    // Member desks
     for (const [label, d] of Object.entries(this._deskRects)) {
       if (col >= d.col && col < d.col + d.w && row >= d.row && row < d.row + d.h) {
         this._movePlayerTo(d.col + 1, d.row + 2);
         this.time.delayedCall(300, () => openMemberSheet(label));
         return;
       }
-      // Member character
       const mc = this._chars[label];
       if (mc && col === mc.col && row === mc.row) {
         this._movePlayerTo(mc.col, mc.row + 1);
@@ -942,8 +1122,8 @@ class ParliamentScene extends Phaser.Scene {
         return;
       }
     }
-    // Move player to clicked floor tile
-    if (col > 0 && col < COLS - 1 && row > 1 && row < ROWS - 2) {
+    // Move to floor
+    if (col > 0 && col < COLS - 1 && row > 0 && row < ROWS - 1) {
       this._movePlayerTo(col, row);
     }
   }
@@ -953,12 +1133,7 @@ class ParliamentScene extends Phaser.Scene {
   }
 
   _updatePlayer(delta) {
-    // Keyboard movement
-    const speed = 0.008; // tiles per ms
     let moved = false;
-    const dt = delta;
-    const step = Math.max(1, Math.round(speed * dt));
-
     if (this.playerTarget) {
       const dc = this.playerTarget.col - this._playerCol;
       const dr = this.playerTarget.row - this._playerRow;
@@ -973,8 +1148,6 @@ class ParliamentScene extends Phaser.Scene {
         moved = true;
       }
     }
-
-    // Keyboard
     this.playerMoveTimer -= delta;
     if (this.playerMoveTimer <= 0) {
       let nc = this._playerCol, nr = this._playerRow;
@@ -984,20 +1157,23 @@ class ParliamentScene extends Phaser.Scene {
       else if (this.cursors.down.isDown || this.wasd.down.isDown) { nr++; moved = true; }
       if (moved) {
         nc = Phaser.Math.Clamp(nc, 1, COLS - 2);
-        nr = Phaser.Math.Clamp(nr, 2, ROWS - 3);
+        nr = Phaser.Math.Clamp(nr, 1, ROWS - 2);
         this._playerCol = nc;
         this._playerRow = nr;
-        this.playerMoveTimer = 160; // ms between steps
+        this.playerMoveTimer = 160;
       }
     }
-
     if (moved) {
       this._playerAnim = (this._playerAnim + 1) % 4;
-      const px = this._playerCol * TW * SCALE;
-      const py = this._playerRow * TH * SCALE;
       const bounce = (this._playerAnim === 1 || this._playerAnim === 3) ? -SCALE : 0;
-      this._playerChar.g.setPosition(0, bounce);
-      this._drawPixelChar(this._playerChar.g, px, py + bounce, this._playerChar.color, '你');
+      const pc = this._playerCharRef;
+      if (pc && pc.sprite) {
+        pc.sprite.setPosition(this._px(this._playerCol), this._py(this._playerRow) + bounce);
+        if (pc.lt) pc.lt.setPosition(
+          this._px(this._playerCol) + TW * SCALE / 2,
+          this._py(this._playerRow) + bounce - SCALE * 4
+        );
+      }
     }
   }
 
@@ -1006,21 +1182,7 @@ class ParliamentScene extends Phaser.Scene {
   }
 }
 
-// ── Resize helper ──
-function getGameSize() {
-  const W = window.innerWidth;
-  const H = window.innerHeight;
-  // Keep room proportions; fill screen
-  const roomW = COLS * TW * SCALE;
-  const roomH = ROWS * TH * SCALE;
-  // If room fits, use room size; otherwise scale to fit
-  if (roomW <= W && roomH <= H) return { width: roomW, height: roomH };
-  const scaleX = W / roomW, scaleY = H / roomH;
-  const s = Math.min(scaleX, scaleY);
-  return { width: Math.floor(roomW * s), height: Math.floor(roomH * s) };
-}
-
-const gameSize = getGameSize();
+// ── Game config: fill viewport ──
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   width: COLS * TW * SCALE,
@@ -1031,15 +1193,10 @@ const game = new Phaser.Game({
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: COLS * TW * SCALE,
+    height: ROWS * TH * SCALE,
   },
   render: { pixelArt: true, antialias: false },
-});
-
-// Close sheet on backdrop tap (outside sheet area)
-document.getElementById('game-wrap').addEventListener('click', (e) => {
-  if (document.getElementById('sheet').classList.contains('open')) {
-    // Let Phaser handle taps; sheet has its own close button
-  }
 });
 </script>
 </body>

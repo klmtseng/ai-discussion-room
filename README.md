@@ -69,6 +69,44 @@ The chair receives only `[委員A/B/C]` labels, never model names.
 Copy from `config.example.json` and edit system prompts per role.
 `config.json` is gitignored — no credentials, no personal data in the repo.
 
+### Upgrading to N members (config-driven)
+
+The `members` array in `config.json` controls how many AI seats are available.
+Labels A, B, C, D, … are assigned automatically by position count.
+
+**Example: adding a 4th seat (Gemini 2.5 Pro)**
+
+```json
+{
+  "members": [
+    {"id": "claude", "model_display": "Claude", "adapter": "claude",
+     "color": "#e07830", "emblem": "star", "system_prompt": ""},
+    {"id": "codex", "model_display": "ChatGPT", "adapter": "codex",
+     "color": "#10b8a0", "emblem": "knot", "system_prompt": ""},
+    {"id": "gemini", "model_display": "Gemini 2.5 Flash", "adapter": "gemini",
+     "model_arg": "gemini-2.5-flash", "color": "#8060e8", "emblem": "quad", "system_prompt": ""},
+    {"id": "gemini-pro", "model_display": "Gemini 2.5 Pro", "adapter": "gemini",
+     "model_arg": "gemini-2.5-pro", "color": "#4040c0", "emblem": "quad", "system_prompt": ""}
+  ]
+}
+```
+
+> **Note on Gemini 2.5 Pro free tier**: `gemini -m gemini-2.5-pro` uses the free API key.
+> The free tier allows ~50 requests/day. Each parliament session = 1 member call per seat.
+> (`claude --model` flag confirmed via `claude --help`: use `--model <alias>` for Claude Code.)
+
+**Example: adding a second Claude personality**
+
+```json
+{"id": "claude-critic", "model_display": "Claude (批判者)", "adapter": "claude",
+ "color": "#c05020", "emblem": "star",
+ "system_prompt": "你是一位嚴格的批判者委員。對每個問題都找出潛在風險和反例。"}
+```
+
+The `adapter` key maps to the CLI runner (`claude`, `codex`, `gemini`).
+The `model_display` and `emblem`/`color` fields are for the public UI only —
+they are never sent to the chair AI to preserve anonymisation.
+
 ---
 
 ## Running Tests
