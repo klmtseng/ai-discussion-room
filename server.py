@@ -204,6 +204,29 @@ class _Handler(BaseHTTPRequestHandler):
             if not self._require_pin():
                 return
 
+            # GET /api/config  — read-only: returns member display metadata (locked by PIN)
+            if parts == ["api", "config"]:
+                cfg = _load_config()
+                members_cfg = cfg.get("members", [])
+                # Build label→meta mapping using same shuffle-independent order as anonymizer
+                import anonymizer as _anon
+                members_out = _anon.members_from_config(cfg)
+                labels = [chr(ord("A") + i) for i in range(len(members_out))]
+                # Note: actual label→adapter mapping is shuffled per session; here we expose
+                # display info in fixed order A/B/C so the frontend can populate desks before
+                # a session starts. Labels are reassigned randomly per session but count/colors
+                # are stable enough for idle display.
+                result = []
+                for i, m in enumerate(members_out):
+                    result.append({
+                        "label": labels[i],
+                        "model_display": m.get("model_display", labels[i]),
+                        "color": m.get("color", "#888888"),
+                        "emblem": m.get("emblem", "dot"),
+                    })
+                self._send_json(200, {"members": result})
+                return
+
             # GET /api/parliament/{id}
             if len(parts) == 3 and parts[:2] == ["api", "parliament"]:
                 session = self._get_session(parts[2])

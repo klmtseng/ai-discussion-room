@@ -309,6 +309,80 @@ class TestAnonymizerNLabels(unittest.TestCase):
         self.assertEqual(meta["C"]["model_display"], "ChatGPT")
 
 
+# ── GET /api/config — static member metadata endpoint ────────────────────────
+
+class TestApiConfig(unittest.TestCase):
+    """Verify /api/config returns member display metadata without starting a session."""
+
+    def setUp(self):
+        import server as srv
+        import http.server as _hs
+        self._srv_mod = srv
+        # Patch config so test is independent of config.json on disk
+        srv._config_cache = _THREE_CFG
+        self._server = _hs.HTTPServer(("127.0.0.1", 0), srv._Handler)
+        self._port = self._server.socket.getsockname()[1]
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+
+    def tearDown(self):
+        self._server.shutdown()
+        import server as srv
+        srv._config_cache = None  # reset so other tests load fresh
+
+    def _get(self, path, pin=None):
+        import urllib.request, urllib.error
+        url = f"http://127.0.0.1:{self._port}{path}"
+        req = urllib.request.Request(url)
+        if pin is not None:
+            req.add_header("X-Parliament-Pin", pin)
+        try:
+            resp = urllib.request.urlopen(req)
+            return resp.status, json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_config_requires_pin(self):
+        status, _ = self._get("/api/config")
+        self.assertEqual(status, 401)
+
+    def test_config_wrong_pin_returns_401(self):
+        status, _ = self._get("/api/config", pin="000000")
+        self.assertEqual(status, 401)
+
+    def test_config_returns_members_list(self):
+        pin = self._srv_mod._PIN
+        status, body = self._get("/api/config", pin=pin)
+        self.assertEqual(status, 200)
+        self.assertIn("members", body)
+        members = body["members"]
+        self.assertEqual(len(members), 3)
+
+    def test_config_members_have_required_fields(self):
+        pin = self._srv_mod._PIN
+        _, body = self._get("/api/config", pin=pin)
+        for m in body["members"]:
+            self.assertIn("label", m)
+            self.assertIn("model_display", m)
+            self.assertIn("color", m)
+            self.assertIn("emblem", m)
+
+    def test_config_labels_are_A_B_C(self):
+        pin = self._srv_mod._PIN
+        _, body = self._get("/api/config", pin=pin)
+        labels = [m["label"] for m in body["members"]]
+        self.assertEqual(labels, ["A", "B", "C"])
+
+    def test_config_no_private_fields(self):
+        """adapter, system_prompt, model_arg must NOT be exposed."""
+        pin = self._srv_mod._PIN
+        _, body = self._get("/api/config", pin=pin)
+        for m in body["members"]:
+            self.assertNotIn("adapter", m)
+            self.assertNotIn("system_prompt", m)
+            self.assertNotIn("model_arg", m)
+
+
 # ── Server --port argument parsing ────────────────────────────────────────────
 
 class TestServerPortArg(unittest.TestCase):

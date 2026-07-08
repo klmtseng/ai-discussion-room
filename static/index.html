@@ -332,10 +332,35 @@ function verifyPin() {
       PIN = v;
       localStorage.setItem('parliament_pin', PIN);
       document.getElementById('pin-overlay').classList.add('hidden');
+      loadConfigMembers();
     }
   }).catch(() => {
     document.getElementById('pin-err').textContent = '連線失敗，請檢查伺服器是否啟動';
   });
+}
+
+// Load static member config to populate desks before any session starts
+async function loadConfigMembers() {
+  try {
+    const { status, data } = await apiGet('/api/config');
+    if (status !== 200 || !data.members) return;
+    // Build a fake "session-like" members map so initMembers can reuse existing code
+    const membersMap = {};
+    for (const m of data.members) {
+      membersMap[m.label] = {
+        model_display: m.model_display,
+        color: m.color,
+        emblem: m.emblem,
+        status: 'idle',
+      };
+    }
+    if (gameScene) {
+      gameScene.initMembers({ members: membersMap });
+    } else {
+      // Scene not ready yet — store and apply in scene create()
+      window._pendingConfigMembers = { members: membersMap };
+    }
+  } catch (_) {}
 }
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -344,6 +369,7 @@ window.addEventListener('DOMContentLoaded', () => {
       .then(r => {
         if (r.status !== 401) {
           document.getElementById('pin-overlay').classList.add('hidden');
+          loadConfigMembers();
         } else {
           PIN = '';
           localStorage.removeItem('parliament_pin');
@@ -642,17 +668,30 @@ function hexToInt(hex) {
 const TW = 16;
 const TH = 16;
 
-// Room layout in tiles
-const COLS = 20;
-const ROWS = 16;
+// Room layout in tiles — portrait-aware: use taller room on narrow screens
+function roomDims() {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  if (H > W * 1.2) {
+    // Portrait: tall narrow room (fewer cols, more rows)
+    return { COLS: 12, ROWS: 20 };
+  }
+  return { COLS: 20, ROWS: 16 };
+}
+let { COLS, ROWS } = roomDims();
 
-// Dynamic SCALE: fill the viewport as much as possible, pixel-snapped
+// Dynamic SCALE: allow fractional zoom so room fills ≥75% of viewport height.
+// Use CSS image-rendering:pixelated to keep pixel-art crisp at non-integer scale.
 function computeScale() {
   const W = window.innerWidth;
   const H = window.innerHeight;
-  const sx = W / (COLS * TW);
-  const sy = H / (ROWS * TH);
-  return Math.max(1, Math.floor(Math.min(sx, sy)));
+  // Leave small margin (4%) for HUD top and hint bottom
+  const availW = W;
+  const availH = H * 0.96;
+  const sx = availW / (COLS * TW);
+  const sy = availH / (ROWS * TH);
+  // Use the smaller axis, minimum 1.0, allow fractional
+  return Math.max(1, Math.min(sx, sy));
 }
 let SCALE = computeScale();
 
@@ -768,6 +807,12 @@ class ParliamentScene extends Phaser.Scene {
     this._buildPlayerChar();
     this._buildBubbles([]);
     this._setupInput();
+
+    // If loadConfigMembers() already fetched data before scene was ready, apply now
+    if (window._pendingConfigMembers) {
+      this.initMembers(window._pendingConfigMembers);
+      window._pendingConfigMembers = null;
+    }
 
     this.cursors = this.input.keyboard.createCursorKeys();
     this.wasd = this.input.keyboard.addKeys({
@@ -893,6 +938,11 @@ class ParliamentScene extends Phaser.Scene {
 
     if (labels.length === 0) return;
 
+    // Portrait mode (COLS<=12): use 2-wide desks to fit in narrower room
+    const isPortrait = COLS <= 12;
+    const deskW = isPortrait ? 2 : 3;
+    const deskGap = isPortrait ? 1 : 1;
+
     // Dynamic desk layout: up to 3 per row, center each row
     const n = labels.length;
     const rowSize = n <= 3 ? n : Math.ceil(n / 2);
@@ -900,14 +950,14 @@ class ParliamentScene extends Phaser.Scene {
     if (n > rowSize) deskRows.push(labels.slice(rowSize));
 
     this._deskRects = {};
-    const deskStartRow = 6;
-    const deskRowGap = 4;
+    const deskStartRow = isPortrait ? 7 : 6;
+    const deskRowGap = isPortrait ? 5 : 4;
 
     for (let ri = 0; ri < deskRows.length; ri++) {
       const rowLabels = deskRows[ri];
       const rn = rowLabels.length;
-      const totalW = rn * 3 + (rn - 1) * 1; // 3 cols per desk, 1 col gap
-      const startCol = Math.floor((COLS - totalW) / 2);
+      const totalW = rn * deskW + (rn - 1) * deskGap;
+      const startCol = Math.max(1, Math.floor((COLS - totalW) / 2));
       const deskRow = deskStartRow + ri * deskRowGap;
 
       for (let ci = 0; ci < rn; ci++) {
@@ -915,17 +965,17 @@ class ParliamentScene extends Phaser.Scene {
         const md = this._memberData[label] || {};
         const hexColor = md.color || '#5b80ff';
         const intColor = hexToInt(hexColor);
-        const col = startCol + ci * 4;
-        this._drawDesk(g, col, deskRow, 3, 1, intColor & 0x404040 ? intColor - 0x202020 : 0x203060,
+        const col = startCol + ci * (deskW + deskGap);
+        this._drawDesk(g, col, deskRow, deskW, 1, intColor & 0x404040 ? intColor - 0x202020 : 0x203060,
                        intColor, label, intColor);
-        this._drawChair(g, col + 1, deskRow - 1);
-        this._deskRects[label] = { col, row: deskRow, w: 3, h: 2, label };
+        this._drawChair(g, col, deskRow - 1);
+        this._deskRects[label] = { col, row: deskRow, w: deskW, h: 2, label };
 
         // Draw AI emblem badge on desk
         const emblem = md.emblem || 'dot';
         const emblFn = EMBLEMS[emblem] || EMBLEMS.dot;
         // Badge at center of desk surface
-        const bx = this._px(col) + (3 * TW * SCALE / 2) - 4 * SCALE;
+        const bx = this._px(col) + (deskW * TW * SCALE / 2) - 4 * SCALE;
         const by = this._py(deskRow) + TH * SCALE / 2 - 4 * SCALE;
         emblFn(g, bx, by, intColor);
       }
@@ -984,19 +1034,23 @@ class ParliamentScene extends Phaser.Scene {
       .setDepth(5);
     if (tint) sprite.setTint(tint);
 
-    // Overlay graphic for emblem badge
+    // Emblem badge graphic (drawn above sprite head) — only for roles that have one
     const eg = this.add.graphics().setDepth(6);
-    if (emblem && EMBLEMS[emblem]) {
-      const bx = x + (TW * SCALE / 2) - 4;
-      const by = y - 4;
+    if (emblem && EMBLEMS[emblem] && labelText) {
+      // Position badge centered above sprite, 2px above top edge
+      const bx = x + Math.floor(TW * SCALE / 2) - 4;
+      const by = y - 10;
       EMBLEMS[emblem](eg, bx, by, tint || 0xffffff);
     }
 
-    // Label text above sprite
-    const lt = this.add.text(x + TW * SCALE / 2, y - SCALE * 4, labelText || '', {
-      fontSize: `${SCALE * 4}px`, color: '#ffffff', fontFamily: 'monospace', resolution: 2,
-      backgroundColor: '#1a1008cc', padding: { x: 2, y: 1 },
+    // Label text above sprite — use readable font size (min 8px), no background box
+    const fontSize = Math.max(8, Math.round(SCALE * 5));
+    const lt = this.add.text(x + TW * SCALE / 2, y - SCALE * 2, labelText || '', {
+      fontSize: `${fontSize}px`, color: '#ffffff', fontFamily: 'monospace', resolution: 2,
+      stroke: '#1a1008', strokeThickness: 3,
     }).setOrigin(0.5, 1).setDepth(7);
+    // Only show label if there's text
+    lt.setVisible(!!labelText);
 
     return { col, row, frame, tint, sprite, eg, lt, label: labelText };
   }
@@ -1029,7 +1083,8 @@ class ParliamentScene extends Phaser.Scene {
       const label = this._memberLabels[i];
       const dr = this._deskRects[label];
       if (!dr) continue;
-      const col = dr.col + 1;
+      // Center sprite within desk width
+      const col = dr.col + Math.floor(dr.w / 2);
       const row = dr.row - 1;
       const md = this._memberData[label];
       const intColor = hexToInt(md.color);
@@ -1048,12 +1103,13 @@ class ParliamentScene extends Phaser.Scene {
       if (this._bubbles[key].t) this._bubbles[key].t.destroy();
     }
     this._bubbles = {};
+    const fontSize = Math.max(8, Math.round(SCALE * 5));
     for (const key of ['chair', 'player', ...labels]) {
       const t = this.add.text(0, 0, '', {
-        fontSize: `${SCALE * 4}px`, color: '#ffffff',
+        fontSize: `${fontSize}px`, color: '#ffffff',
         fontFamily: 'monospace', resolution: 2,
-        backgroundColor: '#1a1008cc', padding: { x: 3, y: 2 }
-      }).setDepth(10);
+        stroke: '#1a1008', strokeThickness: 3,
+      }).setDepth(10).setVisible(false);
       this._bubbles[key] = { t, text: '' };
     }
   }
@@ -1069,6 +1125,7 @@ class ParliamentScene extends Phaser.Scene {
     b.t.setOrigin(0.5, 1);
     b.t.setText(text || '');
     b.t.setStyle({ color: color || '#ffffff' });
+    b.t.setVisible(!!(text && text.length > 0));
   }
 
   resetMemberStates() {
@@ -1183,20 +1240,24 @@ class ParliamentScene extends Phaser.Scene {
 }
 
 // ── Game config: fill viewport ──
+// Use logical pixel dimensions and let Phaser/CSS scale up.
+// roundPixels keeps art crisp at fractional SCALE.
+const _gameW = Math.round(COLS * TW * SCALE);
+const _gameH = Math.round(ROWS * TH * SCALE);
 const game = new Phaser.Game({
   type: Phaser.AUTO,
-  width: COLS * TW * SCALE,
-  height: ROWS * TH * SCALE,
+  width: _gameW,
+  height: _gameH,
   backgroundColor: '#1a100a',
   parent: 'game-wrap',
   scene: [ParliamentScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: COLS * TW * SCALE,
-    height: ROWS * TH * SCALE,
+    width: _gameW,
+    height: _gameH,
   },
-  render: { pixelArt: true, antialias: false },
+  render: { pixelArt: true, antialias: false, roundPixels: true },
 });
 </script>
 </body>
