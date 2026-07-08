@@ -2,12 +2,16 @@
 Core orchestration for AI Parliament.
 Manages sessions, member calls (parallel), chair summaries, and followups.
 All state lives in-memory (dict). Thread-safe via a caller-supplied lock.
+
+Upgrade 2: public_view() includes model_display per label (from shuffle resolution).
+           Chair prompt NEVER receives model_display — enforced here.
+Upgrade 3: N-member support driven by config["members"] array.
 """
 import random
 import threading
 import time
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import adapters
 import anonymizer
@@ -18,8 +22,11 @@ import anonymizer
 # ---------------------------------------------------------------------------
 
 def create_session(question: str, config: dict) -> dict:
+    members_cfg = anonymizer.members_from_config(config)
+    adapter_names = [m["adapter"] for m in members_cfg]
     seed = random.randint(0, 2**31 - 1)
-    shuffle_map = anonymizer.create_shuffle(seed)  # {label → adapter_name}
+    shuffle_map = anonymizer.create_shuffle(seed, adapter_names)  # {label → adapter_name}
+    label_meta = anonymizer.resolve_label_meta(shuffle_map, config)  # {label → {model_display, color, emblem}}
     return {
         "id": str(uuid.uuid4())[:8],
         "question": question,
@@ -27,6 +34,7 @@ def create_session(question: str, config: dict) -> dict:
         "created_at": time.time(),
         "_debug_seed": seed,
         "_debug_shuffle": shuffle_map,   # label → adapter (debug only, never sent to chair)
+        "_label_meta": label_meta,       # label → {model_display, color, emblem} (public view only)
         "members": {
             label: {
                 "status": "running",
@@ -49,6 +57,7 @@ def create_session(question: str, config: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def public_view(session: dict) -> dict:
+    label_meta = session.get("_label_meta", {})
     return {
         "session_id": session["id"],
         "question": session["question"],
@@ -60,6 +69,10 @@ def public_view(session: dict) -> dict:
                 "response": m.get("response"),
                 "error": m.get("error"),
                 "conversation_turns": len(m.get("conversation", [])) // 2,
+                # Upgrade 2: expose model_display in public view (NOT in chair prompt)
+                "model_display": label_meta.get(label, {}).get("model_display", ""),
+                "color": label_meta.get(label, {}).get("color", "#888888"),
+                "emblem": label_meta.get(label, {}).get("emblem", "dot"),
             }
             for label, m in session["members"].items()
         },
@@ -82,11 +95,12 @@ def public_view(session: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def run_session(session: dict, lock: threading.Lock) -> None:
-    """Run three member calls in parallel, then trigger chair summary."""
+    """Run all member calls in parallel, then trigger chair summary."""
+    labels = list(session["members"].keys())
     try:
         threads = [
             threading.Thread(target=_run_member, args=(session, label, lock), daemon=True)
-            for label in anonymizer.LABELS
+            for label in labels
         ]
         for t in threads:
             t.start()
@@ -107,8 +121,16 @@ def _run_member(session: dict, label: str, lock: threading.Lock) -> None:
     question = session["question"]
     member_system = config.get("member_system_prompt", "")
 
-    if member_system:
-        prompt = f"{member_system}\n\n你的本輪代號是委員{label}。\n\n問題：{question}"
+    # Per-member system prompt override from config
+    members_cfg = anonymizer.members_from_config(config)
+    member_override = next(
+        (m.get("system_prompt", "") for m in members_cfg if m["adapter"] == adapter_name),
+        ""
+    )
+    effective_system = member_override or member_system
+
+    if effective_system:
+        prompt = f"{effective_system}\n\n你的本輪代號是委員{label}。\n\n問題：{question}"
     else:
         prompt = (
             f"你是委員{label}。請回答以下問題，不要提及你是哪個AI模型或品牌。\n\n"
@@ -146,13 +168,14 @@ def run_summary(
     with lock:
         session["chair_status"] = "running"
         question = session["question"]
+        labels = list(session["members"].keys())
         members_snap: Dict[str, Any] = {
             label: {"status": m["status"], "response": m.get("response")}
             for label, m in session["members"].items()
         }
         followups_snap = [f for f in session.get("followups", []) if f["status"] == "done"]
 
-    # Build anonymized responses
+    # Build anonymized responses — model_display NEVER enters the chair prompt
     anon: Dict[str, str] = {}
     statuses: Dict[str, str] = {}
     for label, m in members_snap.items():
@@ -168,6 +191,7 @@ def run_summary(
         chair_system=chair_system,
         is_resummary=is_resummary,
         followup_summaries=followups_snap if is_resummary else None,
+        labels=labels,
     )
 
     try:
@@ -221,6 +245,14 @@ def run_followup(
 
     member_system = config.get("member_system_prompt", "")
 
+    # Per-member system prompt override
+    members_cfg = anonymizer.members_from_config(config)
+    member_override = next(
+        (m.get("system_prompt", "") for m in members_cfg if m["adapter"] == adapter_name),
+        ""
+    )
+    effective_system = member_override or member_system
+
     # Reconstruct full conversation history in prompt
     history_parts = []
     for i, turn in enumerate(conv):
@@ -229,14 +261,14 @@ def run_followup(
 
     if history_parts:
         prompt = (
-            f"{member_system}\n\n"
+            f"{effective_system}\n\n"
             f"你是委員{member}，以下是你之前的對話記錄：\n\n"
             + "\n\n".join(history_parts)
             + f"\n\n用戶追問：{fq}\n\n請繼續回答。不要透露你是哪個AI品牌。"
         )
     else:
         prompt = (
-            f"{member_system}\n\n你是委員{member}。\n\n"
+            f"{effective_system}\n\n你是委員{member}。\n\n"
             f"問題：{fq}\n\n不要透露你是哪個AI品牌。"
         )
 

@@ -2,31 +2,115 @@
 Anonymization layer for AI Parliament.
 
 Two jobs:
-  1. create_shuffle(seed) → random {label: adapter} mapping reproducible per seed.
+  1. create_shuffle(seed, adapter_names) → random {label: adapter_name} mapping.
   2. filter_self_id(text, label) → strip/replace AI self-identification phrases.
   3. build_chair_prompt(…) → construct chair input with zero model names.
+
+Upgrade 2: public_model_display_map(config) — returns {label: model_display}
+  for use in public_view only; NEVER passed to chair prompt.
+Upgrade 3: N-member support — labels generated as A,B,C,D… from member count.
 """
 import random
 import re
 from typing import Dict, List, Optional
 
 # ---------------------------------------------------------------------------
+# Label generation
+# ---------------------------------------------------------------------------
+
+import string
+
+def _make_labels(n: int) -> List[str]:
+    """Generate n labels: A, B, C, … Z, AA, AB, …"""
+    labels = []
+    for i in range(n):
+        if i < 26:
+            labels.append(string.ascii_uppercase[i])
+        else:
+            labels.append(string.ascii_uppercase[i // 26 - 1] + string.ascii_uppercase[i % 26])
+    return labels
+
+
+# ---------------------------------------------------------------------------
 # Shuffle
 # ---------------------------------------------------------------------------
 
+# Legacy constants — kept for backward compat and tests that import them directly
 ADAPTER_NAMES = ["claude", "codex", "gemini"]
 LABELS = ["A", "B", "C"]
 
 
-def create_shuffle(seed: int) -> Dict[str, str]:
+def create_shuffle(seed: int, adapter_names: Optional[List[str]] = None) -> Dict[str, str]:
     """
     Returns {label: adapter_name} mapping for one session round.
     Same seed always produces the same mapping (deterministic for debug).
+    adapter_names defaults to the legacy 3-adapter list for backward compat.
     """
+    if adapter_names is None:
+        adapter_names = ADAPTER_NAMES[:]
+    labels = _make_labels(len(adapter_names))
     rng = random.Random(seed)
-    adapters = ADAPTER_NAMES[:]
-    rng.shuffle(adapters)
-    return dict(zip(LABELS, adapters))
+    adapters_copy = adapter_names[:]
+    rng.shuffle(adapters_copy)
+    return dict(zip(labels, adapters_copy))
+
+
+# ---------------------------------------------------------------------------
+# Config helpers (Upgrade 2 & 3)
+# ---------------------------------------------------------------------------
+
+def members_from_config(config: dict) -> List[dict]:
+    """Return the members list from config, or a legacy default for old configs."""
+    members = config.get("members")
+    if members and isinstance(members, list) and len(members) > 0:
+        return members
+    # Legacy: no members array — use built-in defaults
+    return [
+        {"id": "claude", "model_display": "Claude", "adapter": "claude", "color": "#e07830", "emblem": "star"},
+        {"id": "codex",  "model_display": "ChatGPT", "adapter": "codex",  "color": "#10b8a0", "emblem": "knot"},
+        {"id": "gemini", "model_display": "Gemini",  "adapter": "gemini", "color": "#8060e8", "emblem": "quad"},
+    ]
+
+
+def public_model_display_map(config: dict) -> Dict[str, str]:
+    """
+    Return {label: model_display} for use in public view JSON ONLY.
+    Labels are A, B, C, … assigned in config order (not shuffle order — intentionally;
+    shuffle is internal and labels are the only public identity).
+    NOTE: This map MUST NEVER be passed to the chair prompt.
+    """
+    members = members_from_config(config)
+    labels = _make_labels(len(members))
+    # We return label→model_display in CONFIG order (not shuffle order).
+    # The shuffle maps label→adapter internally, but the user-facing model_display
+    # is assigned per-label AFTER shuffle is resolved in parliament.py.
+    return {}  # populated per-session by parliament.py, not here
+
+
+def resolve_label_display(shuffle_map: Dict[str, str], config: dict) -> Dict[str, str]:
+    """
+    Given shuffle_map = {label: adapter_id} and config, return {label: model_display}.
+    This is the post-shuffle mapping: label A might map to Claude in one session,
+    ChatGPT in another. model_display follows the actual adapter, not config order.
+    """
+    members = members_from_config(config)
+    adapter_to_display = {m["adapter"]: m.get("model_display", m["adapter"]) for m in members}
+    return {label: adapter_to_display.get(adapter, adapter) for label, adapter in shuffle_map.items()}
+
+
+def resolve_label_meta(shuffle_map: Dict[str, str], config: dict) -> Dict[str, dict]:
+    """
+    Return {label: {model_display, color, emblem}} following shuffle.
+    Safe to send to public view; NEVER to chair.
+    """
+    members = members_from_config(config)
+    adapter_meta = {m["adapter"]: {
+        "model_display": m.get("model_display", m["adapter"]),
+        "color": m.get("color", "#888888"),
+        "emblem": m.get("emblem", "dot"),
+    } for m in members}
+    return {label: adapter_meta.get(adapter, {"model_display": adapter, "color": "#888888", "emblem": "dot"})
+            for label, adapter in shuffle_map.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -156,15 +240,23 @@ def build_chair_prompt(
     chair_system: str,
     is_resummary: bool = False,
     followup_summaries: Optional[List[dict]] = None,
+    labels: Optional[List[str]] = None,
 ) -> str:
     """
-    Build the chair prompt. Member sections are pre-filtered by filter_self_id
-    (self-identification scrubbed; neutral third-person mentions of AI products
-    in answer content are preserved by design and are not attribution signals).
+    Build the chair prompt. Member sections are pre-filtered by filter_self_id.
+    model_display values MUST NOT appear in anon_responses — caller's responsibility.
 
     anon_responses: {label: already-filtered response text}
     member_statuses: {label: "done"|"error"|"running"}
+    labels: ordered list of labels; defaults to LABELS (A,B,C) for backward compat.
     """
+    if labels is None:
+        # Use member_statuses keys (includes absent members); fall back to anon_responses keys
+        labels = list(member_statuses.keys()) or list(anon_responses.keys()) or LABELS
+
+    n = len(labels)
+    label_list = "/".join(f"委員{l}" for l in labels)
+
     parts: List[str] = []
 
     if chair_system:
@@ -174,15 +266,15 @@ def build_chair_prompt(
     if is_resummary:
         parts.append(f"本輪議題（再總結）：{question}")
         parts.append("")
-        parts.append("以下為三位委員的初始回答及後續深聊補充，請重新總結：")
+        parts.append(f"以下為{n}位委員的初始回答及後續深聊補充，請重新總結：")
     else:
         parts.append(f"本輪議題：{question}")
         parts.append("")
-        parts.append("以下為三位匿名委員的回答，請進行分析：")
+        parts.append(f"以下為{n}位匿名委員的回答，請進行分析：")
 
     parts.append("")
 
-    for label in LABELS:
+    for label in labels:
         status = member_statuses.get(label, "error")
         if status == "done":
             resp = anon_responses.get(label, "(無內容)")
@@ -211,7 +303,7 @@ def build_chair_prompt(
     parts.append("")
     parts.append(
         "重要：回答中嚴禁出現 Claude、ChatGPT、Gemini、Bard、Codex、"
-        "Anthropic、OpenAI、Google 等品牌名稱；請一律稱「委員A/B/C」。"
+        "Anthropic、OpenAI、Google 等品牌名稱；請一律稱「" + label_list + "」。"
     )
 
     return "\n".join(parts)

@@ -86,7 +86,7 @@ def run_adapter(name: str, prompt: str) -> Tuple[bool, str]:
         return _run_claude(prompt)
     if name == "codex":
         return _run_codex(prompt)
-    if name == "gemini":
+    if name == "gemini" or name.startswith("gemini"):
         return _run_gemini(prompt)
     return False, f"Unknown adapter: {name}"
 
@@ -102,6 +102,9 @@ def _run_mock(name: str, prompt: str) -> Tuple[bool, str]:
         "claude": f"[MOCK Claude] 關於「{short}」：這是一個值得深思的問題。我認為需要從多個角度來分析。",
         "codex":  f"[MOCK Codex] 針對「{short}」：從技術角度來看，有幾個關鍵點值得注意。",
         "gemini": f"[MOCK Gemini] 就「{short}」而言：根據現有資訊，可以從以下幾個維度思考。",
+        # Extra mock adapters for N-member tests
+        "gemini-pro":   f"[MOCK Gemini Pro] 關於「{short}」：從高層次分析，有幾個值得注意的面向。",
+        "claude-extra": f"[MOCK Claude-2] 針對「{short}」：從另一個角度補充，這個問題有多個層面。",
     }
     return True, responses.get(name, f"[MOCK {name}] 已收到問題。")
 
