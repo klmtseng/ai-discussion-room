@@ -41,6 +41,10 @@ def create_session(question: str, config: dict) -> dict:
                 "response": None,
                 "error": None,
                 "_adapter": adapter_name,
+                "_model_arg": next(
+                    (m.get("model_arg") for m in members_cfg if m["adapter"] == adapter_name),
+                    None,
+                ),
                 "conversation": [],       # [{role, content}, …]
             }
             for label, adapter_name in shuffle_map.items()
@@ -138,7 +142,10 @@ def _run_member(session: dict, label: str, lock: threading.Lock) -> None:
         )
 
     try:
-        success, text = adapters.run_adapter(adapter_name, prompt)
+        success, text = adapters.run_adapter(
+            adapter_name, prompt,
+            model_arg=session["members"][label].get("_model_arg"),
+        )
     except Exception as exc:
         success, text = False, str(exc)
 
@@ -273,7 +280,10 @@ def run_followup(
         )
 
     try:
-        success, text = adapters.run_adapter(adapter_name, prompt)
+        success, text = adapters.run_adapter(
+            adapter_name, prompt,
+            model_arg=session["members"][member].get("_model_arg"),
+        )
     except Exception as exc:
         success, text = False, str(exc)
 

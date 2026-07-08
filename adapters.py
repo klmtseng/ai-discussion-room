@@ -74,20 +74,22 @@ def filter_noise(text: str, adapter_name: str) -> str:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def run_adapter(name: str, prompt: str) -> Tuple[bool, str]:
+def run_adapter(name: str, prompt: str, model_arg: str = None) -> Tuple[bool, str]:
     """
     Run CLI adapter `name` with `prompt`.
+    model_arg (optional, from the member's config entry) selects a specific
+    model within the CLI: gemini `-m`, claude `--model`. Codex ignores it.
     Returns (success: bool, text: str).
     On failure text is a human-readable error description (no stack trace).
     """
     if _MOCK_MODE:
         return _run_mock(name, prompt)
-    if name == "claude":
-        return _run_claude(prompt)
+    if name == "claude" or name.startswith("claude"):
+        return _run_claude(prompt, model_arg)
     if name == "codex":
         return _run_codex(prompt)
     if name == "gemini" or name.startswith("gemini"):
-        return _run_gemini(prompt)
+        return _run_gemini(prompt, model_arg)
     return False, f"Unknown adapter: {name}"
 
 
@@ -113,11 +115,13 @@ def _run_mock(name: str, prompt: str) -> Tuple[bool, str]:
 # Claude
 # ---------------------------------------------------------------------------
 
-def _run_claude(prompt: str) -> Tuple[bool, str]:
+def _run_claude(prompt: str, model_arg: str = None) -> Tuple[bool, str]:
     cmd = [
         "claude", "-p", prompt,
         "--disallowedTools", "Bash,Edit,Write,WebFetch,Read,TodoWrite,TodoRead",
     ]
+    if model_arg:
+        cmd += ["--model", model_arg]
     timeout = ADAPTERS["claude"]["timeout"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -186,10 +190,10 @@ def _run_codex(prompt: str) -> Tuple[bool, str]:
 # Gemini
 # ---------------------------------------------------------------------------
 
-def _run_gemini(prompt: str) -> Tuple[bool, str]:
+def _run_gemini(prompt: str, model_arg: str = None) -> Tuple[bool, str]:
     timeout = ADAPTERS["gemini"]["timeout"]
     env = {**os.environ, "GEMINI_CLI_TRUST_WORKSPACE": "true"}
-    cmd = ["gemini", "-p", prompt, "-m", "gemini-2.5-flash"]
+    cmd = ["gemini", "-p", prompt, "-m", model_arg or "gemini-2.5-flash"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
         text = filter_noise(r.stdout, "gemini")
