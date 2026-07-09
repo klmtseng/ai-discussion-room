@@ -150,8 +150,12 @@ def _run_member(session: dict, label: str, lock: threading.Lock) -> None:
             "\"Conclusion: \" followed by a single sentence ≤40 words summarising your position.)"
         )
         if effective_system:
+            # The user-supplied system prompt may be written in another language
+            # (e.g. Chinese) and would otherwise steer the answer's language —
+            # in EN mode the language directive must win explicitly.
             prompt = (
                 f"{effective_system}{_conclusion_instruction}\n\n"
+                f"Respond in English regardless of the language used above.\n"
                 f"Your label for this round is Member {label}.\n\nQuestion: {question}"
             )
         else:
