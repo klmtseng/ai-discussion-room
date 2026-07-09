@@ -470,5 +470,154 @@ class TestServerConfigArg(unittest.TestCase):
             srv._CONFIG_PATH_OVERRIDE = original_override
 
 
+# ── Dual-same-adapter seats (the id-keyed bug fix) ───────────────────────────
+
+_DUAL_GEMINI_CFG = {
+    "members": [
+        {
+            "id": "claude",
+            "model_display": "Claude",
+            "adapter": "claude",
+            "color": "#e07830",
+            "emblem": "star",
+            "model_arg": None,
+            "system_prompt": "你是Claude委員。",
+        },
+        {
+            "id": "gemini-flash",
+            "model_display": "Gemini Flash",
+            "adapter": "gemini",
+            "color": "#8060e8",
+            "emblem": "quad",
+            "model_arg": "gemini-2.5-flash",
+            "system_prompt": "你是Gemini Flash委員。",
+        },
+        {
+            "id": "gemini-pro",
+            "model_display": "Gemini Pro",
+            "adapter": "gemini",
+            "color": "#30c850",
+            "emblem": "dot",
+            "model_arg": "gemini-pro",
+            "system_prompt": "你是Gemini Pro委員。",
+        },
+        {
+            "id": "codex",
+            "model_display": "ChatGPT",
+            "adapter": "codex",
+            "color": "#10b8a0",
+            "emblem": "knot",
+            "model_arg": None,
+            "system_prompt": "你是Codex委員。",
+        },
+    ],
+    "member_system_prompt": "你是委員。",
+    "chair_system_prompt": "你是主席。",
+}
+
+
+class TestDualSameAdapterSeats(unittest.TestCase):
+    """
+    Core regression: two seats sharing the same adapter (gemini) but with distinct
+    member ids must each have their own model_display, color, model_arg, and
+    system_prompt.  Before the id-keyed fix, the first-match adapter lookup
+    caused the second Gemini seat to inherit the first's data.
+    """
+
+    def _run_mock_session(self, cfg):
+        with patch.object(adapters, "run_adapter", return_value=(True, "mock 回答。")):
+            session = parliament.create_session("測試議題", cfg)
+            lock = threading.Lock()
+            parliament.run_session(session, lock)
+        return session
+
+    # ── Test 1: public_view shows distinct model_display for the two Gemini seats ─
+
+    def test_dual_gemini_public_view_displays_distinct(self):
+        """public_view must show 'Gemini Flash' and 'Gemini Pro', not both the same."""
+        session = self._run_mock_session(_DUAL_GEMINI_CFG)
+        view = parliament.public_view(session)
+        displays = {mdata["model_display"] for mdata in view["members"].values()}
+        self.assertIn("Gemini Flash", displays,
+            f"'Gemini Flash' missing from public_view displays: {displays}")
+        self.assertIn("Gemini Pro", displays,
+            f"'Gemini Pro' missing from public_view displays: {displays}")
+
+    # ── Test 2: session dict has distinct _model_arg for the two Gemini seats ────
+
+    def test_dual_gemini_session_model_args_distinct(self):
+        """White-box: session members must carry distinct _model_arg values."""
+        with patch.object(adapters, "run_adapter", return_value=(True, "mock 回答。")):
+            session = parliament.create_session("測試議題", _DUAL_GEMINI_CFG)
+        # Find labels for the two gemini members (by _member_id)
+        flash_label = next(
+            lbl for lbl, m in session["members"].items()
+            if m["_member_id"] == "gemini-flash"
+        )
+        pro_label = next(
+            lbl for lbl, m in session["members"].items()
+            if m["_member_id"] == "gemini-pro"
+        )
+        self.assertEqual(session["members"][flash_label]["_model_arg"], "gemini-2.5-flash",
+            "gemini-flash seat must carry model_arg='gemini-2.5-flash'")
+        self.assertEqual(session["members"][pro_label]["_model_arg"], "gemini-pro",
+            "gemini-pro seat must carry model_arg='gemini-pro'")
+
+    # ── Test 3: each Gemini seat's system_prompt is used independently ──────────
+
+    def test_dual_gemini_per_seat_system_prompt(self):
+        """Each Gemini seat must use its own system_prompt, not the first Gemini's."""
+        flash_prompts = []
+        pro_prompts = []
+
+        def mock_adapter(name, prompt, model_arg=None):
+            if name == "gemini":
+                if model_arg == "gemini-2.5-flash":
+                    flash_prompts.append(prompt)
+                elif model_arg == "gemini-pro":
+                    pro_prompts.append(prompt)
+                return True, "mock 回答。"
+            if name == "claude":
+                return True, "主席總結。"
+            return True, "mock 回答。"
+
+        with patch.object(adapters, "run_adapter", side_effect=mock_adapter):
+            session = parliament.create_session("測試議題", _DUAL_GEMINI_CFG)
+            lock = threading.Lock()
+            parliament.run_session(session, lock)
+
+        self.assertTrue(len(flash_prompts) > 0, "Gemini Flash adapter was never called")
+        self.assertTrue(len(pro_prompts) > 0, "Gemini Pro adapter was never called")
+        # Each seat's own system_prompt must appear in the prompt sent to it
+        self.assertTrue(
+            any("Gemini Flash委員" in p for p in flash_prompts),
+            f"Flash system_prompt missing from Flash prompts: {flash_prompts}"
+        )
+        self.assertTrue(
+            any("Gemini Pro委員" in p for p in pro_prompts),
+            f"Pro system_prompt missing from Pro prompts: {pro_prompts}"
+        )
+        # Cross-contamination check: Flash prompt must NOT carry Pro's system prompt
+        self.assertFalse(
+            any("Gemini Pro委員" in p for p in flash_prompts),
+            "Gemini Pro system_prompt leaked into Flash call"
+        )
+
+    # ── Test 4: shuffle is still random and label→id is 1-to-1 ─────────────────
+
+    def test_dual_gemini_shuffle_label_to_id_bijective(self):
+        """Shuffle must produce a bijection label→member_id even with duplicate adapters."""
+        all_ids = [m["id"] for m in _DUAL_GEMINI_CFG["members"]]
+        for seed in range(20):
+            shuffle = anonymizer.create_shuffle(seed, all_ids)
+            # Keys are distinct labels, values must be a permutation of the ids
+            self.assertEqual(set(shuffle.keys()), {"A", "B", "C", "D"})
+            self.assertEqual(set(shuffle.values()), set(all_ids),
+                f"seed {seed}: shuffle values {set(shuffle.values())} != ids {set(all_ids)}")
+            # No id appears twice (bijection)
+            self.assertEqual(len(shuffle.values()), len(set(shuffle.values())),
+                f"seed {seed}: duplicate member_id in shuffle {shuffle}")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
