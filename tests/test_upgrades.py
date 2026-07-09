@@ -62,7 +62,7 @@ class TestChairPromptNoModelDisplay(unittest.TestCase):
     def _collect_chair_prompts(self, cfg):
         captured = []
 
-        def mock_adapter(name, prompt):
+        def mock_adapter(name, prompt, model_arg=None, seat_cfg=None):
             if name == "claude":
                 captured.append(prompt)
                 return True, "主席總結：共識/分歧/結論。"
@@ -135,7 +135,7 @@ class TestChairPromptNoModelDisplay(unittest.TestCase):
         model_displays = [m["model_display"] for m in _THREE_CFG["members"]]
         captured = []
 
-        def mock_adapter(name, prompt):
+        def mock_adapter(name, prompt, model_arg=None, seat_cfg=None):
             if name == "claude":
                 captured.append(prompt)
                 return True, "主席總結。"
@@ -570,7 +570,7 @@ class TestDualSameAdapterSeats(unittest.TestCase):
         flash_prompts = []
         pro_prompts = []
 
-        def mock_adapter(name, prompt, model_arg=None):
+        def mock_adapter(name, prompt, model_arg=None, seat_cfg=None):
             if name == "gemini":
                 if model_arg == "gemini-2.5-flash":
                     flash_prompts.append(prompt)

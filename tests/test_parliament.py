@@ -241,7 +241,7 @@ class TestSessionWithOneMemberFailure(unittest.TestCase):
         """When codex adapter fails, session still completes and chair is called."""
         captured_chair_prompts = []
 
-        def mock_adapter(name, prompt, model_arg=None):
+        def mock_adapter(name, prompt, model_arg=None, seat_cfg=None):
             if name == "codex":
                 return False, "codex: timeout after 120s"
             if name == "claude":

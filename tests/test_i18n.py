@@ -43,7 +43,7 @@ _THREE_CFG = {
 
 def _run_session(lang="zh", response_text=None):
     """Run a session with all members returning response_text."""
-    def mock_adapter(name, prompt, model_arg=None):
+    def mock_adapter(name, prompt, model_arg=None, seat_cfg=None):
         return adapters._run_mock(name, prompt)
 
     adapters.set_mock_mode(True)
@@ -93,7 +93,7 @@ class TestEnMemberPrompt(unittest.TestCase):
 
     def _capture_prompts(self, lang):
         prompts = []
-        def mock_adapter(name, prompt, model_arg=None):
+        def mock_adapter(name, prompt, model_arg=None, seat_cfg=None):
             prompts.append((name, prompt))
             return True, f"Body.\nConclusion: Test conclusion."
 
