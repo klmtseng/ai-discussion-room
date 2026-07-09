@@ -34,6 +34,12 @@ if _port_idx is not None and _port_idx + 1 < len(sys.argv):
     except ValueError:
         pass
 
+# Parse --config <path> from argv
+_CONFIG_PATH_OVERRIDE: str | None = None
+_cfg_idx = next((i for i, a in enumerate(sys.argv) if a == "--config"), None)
+if _cfg_idx is not None and _cfg_idx + 1 < len(sys.argv):
+    _CONFIG_PATH_OVERRIDE = sys.argv[_cfg_idx + 1]
+
 _sessions: dict = {}
 _sessions_lock = threading.Lock()
 
@@ -92,6 +98,14 @@ def _load_config() -> dict:
     if _config_cache is not None:
         return _config_cache
     base = os.path.dirname(os.path.abspath(__file__))
+    # --config <path> override takes highest priority
+    if _CONFIG_PATH_OVERRIDE:
+        path = _CONFIG_PATH_OVERRIDE if os.path.isabs(_CONFIG_PATH_OVERRIDE) \
+               else os.path.join(base, _CONFIG_PATH_OVERRIDE)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                _config_cache = json.load(f)
+            return _config_cache
     for name in ("config.json", "config.example.json"):
         path = os.path.join(base, name)
         if os.path.exists(path):
@@ -334,6 +348,8 @@ if __name__ == "__main__":
     print(f"AI 眾議院啟動{mock_tag} → http://localhost:{PORT}")
     print(f"PIN: {_PIN}  (存於 runs/pin.txt，或設 PARLIAMENT_PIN 環境變數)")
     print(f"使用 --port <n> 可自訂端口（測試用 8931）")
+    if _CONFIG_PATH_OVERRIDE:
+        print(f"Config override: {_CONFIG_PATH_OVERRIDE}")
     server = HTTPServer(("", PORT), _Handler)
     try:
         server.serve_forever()

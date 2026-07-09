@@ -795,13 +795,16 @@ class ParliamentScene extends Phaser.Scene {
 
   create() {
     gameScene = this;
+    window._gameScene = this;  // expose for debugging / testing
     this._memberData = {};  // {label: {model_display, color, emblem}}
     this._memberLabels = [];
     this._chars = {};
     this._deskRects = {};
     this._bubbles = {};
+    this._blocked = new Set(); // collision set: keys = "col,row"
 
     this._buildRoom();
+    this._buildBlocked();        // populate wall cells first
     this._buildFurniture([]);      // empty until we get member data
     this._buildChairChar();
     this._buildPlayerChar();
@@ -827,6 +830,69 @@ class ParliamentScene extends Phaser.Scene {
 
   _px(col) { return col * TW * SCALE; }
   _py(row) { return row * TH * SCALE; }
+
+  // ── Collision helpers ────────────────────────────────────────────
+  _buildBlocked() {
+    // Reset to only wall/border cells. Called once on create().
+    this._blocked = new Set();
+    // Border walls: col=0, col=COLS-1, row=0, row=ROWS-1
+    for (let c = 0; c < COLS; c++) {
+      this._blocked.add(`${c},0`);
+      this._blocked.add(`${c},${ROWS - 1}`);
+    }
+    for (let r = 1; r < ROWS - 1; r++) {
+      this._blocked.add(`0,${r}`);
+      this._blocked.add(`${COLS - 1},${r}`);
+    }
+  }
+
+  _rebuildFurnitureBlocked() {
+    // Remove all furniture-blocked cells first (keep wall cells),
+    // then re-add from current podium + desks.
+    // Strategy: rebuild from scratch (walls + furniture) since blocked set is cheap.
+    this._buildBlocked();
+    // Podium occupies podCol..podCol+2, podRow..podRow+1 (w=3, h=2)
+    const p = this._podiumRect;
+    if (p) {
+      for (let c = p.col; c < p.col + p.w; c++) {
+        for (let r = p.row; r < p.row + p.h; r++) {
+          this._blocked.add(`${c},${r}`);
+        }
+      }
+      // Chair char at podCol+1, podRow-1 is also blocked
+      const chairCol = Math.floor(COLS / 2);
+      const chairRow = 3;
+      this._blocked.add(`${chairCol},${chairRow}`);
+    }
+    // Desks: each deskRect covers col..col+w-1, row..row+h-1
+    for (const dr of Object.values(this._deskRects)) {
+      for (let c = dr.col; c < dr.col + dr.w; c++) {
+        for (let r = dr.row; r < dr.row + dr.h; r++) {
+          this._blocked.add(`${c},${r}`);
+        }
+      }
+      // Member chars sit at dr.col+floor(w/2), dr.row-1 — also blocked
+      const mc = this._chars[dr.label];
+      if (mc) this._blocked.add(`${mc.col},${mc.row}`);
+    }
+  }
+
+  _isBlocked(col, row) {
+    return this._blocked.has(`${col},${row}`);
+  }
+
+  // Find the adjacent free cell closest to target (col, row) neighbour of (tc, tr)
+  // Used so clicking on a desk/char routes player to a walkable neighbour.
+  _adjacentFree(tc, tr) {
+    const dirs = [[0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1]];
+    for (const [dc, dr] of dirs) {
+      const nc = tc + dc, nr = tr + dr;
+      if (!this._isBlocked(nc, nr) && nc > 0 && nc < COLS-1 && nr > 0 && nr < ROWS-1) {
+        return { col: nc, row: nr };
+      }
+    }
+    return null; // completely surrounded — shouldn't happen
+  }
 
   // Draw a tile from a spritesheet at a given pixel position
   _drawTile(sheet, frame, col, row, tint) {
@@ -980,6 +1046,9 @@ class ParliamentScene extends Phaser.Scene {
         emblFn(g, bx, by, intColor);
       }
     }
+
+    // Rebuild collision set whenever furniture changes
+    if (this._blocked) this._rebuildFurnitureBlocked();
   }
 
   _drawDesk(g, col, row, w, h, baseColor, topColor, label, labelColor) {
@@ -1095,6 +1164,9 @@ class ParliamentScene extends Phaser.Scene {
 
     // Rebuild bubbles for new label set
     this._buildBubbles(this._memberLabels);
+
+    // Refresh collision set now that member sprites are positioned
+    this._rebuildFurnitureBlocked();
   }
 
   _buildBubbles(labels) {
@@ -1160,33 +1232,73 @@ class ParliamentScene extends Phaser.Scene {
     // Podium
     const p = this._podiumRect;
     if (p && col >= p.col && col < p.col + p.w && row >= p.row && row < p.row + p.h) {
-      openChairSheet(); return;
+      // Walk to free cell adjacent to podium, then open sheet
+      const dst = this._adjacentFree(col, row);
+      if (dst) this._movePlayerTo(dst.col, dst.row);
+      this.time.delayedCall(350, () => openChairSheet());
+      return;
     }
     // Chair char
     const chair = this._chars['chair'];
-    if (chair && col === chair.col && row === chair.row) { openChairSheet(); return; }
+    if (chair && col === chair.col && row === chair.row) {
+      const dst = this._adjacentFree(col, row);
+      if (dst) this._movePlayerTo(dst.col, dst.row);
+      this.time.delayedCall(350, () => openChairSheet());
+      return;
+    }
     // Member desks
     for (const [label, d] of Object.entries(this._deskRects)) {
       if (col >= d.col && col < d.col + d.w && row >= d.row && row < d.row + d.h) {
-        this._movePlayerTo(d.col + 1, d.row + 2);
-        this.time.delayedCall(300, () => openMemberSheet(label));
+        const dst = this._adjacentFree(col, row);
+        if (dst) this._movePlayerTo(dst.col, dst.row);
+        this.time.delayedCall(350, () => openMemberSheet(label));
         return;
       }
       const mc = this._chars[label];
       if (mc && col === mc.col && row === mc.row) {
-        this._movePlayerTo(mc.col, mc.row + 1);
-        this.time.delayedCall(300, () => openMemberSheet(label));
+        const dst = this._adjacentFree(col, row);
+        if (dst) this._movePlayerTo(dst.col, dst.row);
+        this.time.delayedCall(350, () => openMemberSheet(label));
         return;
       }
     }
-    // Move to floor
-    if (col > 0 && col < COLS - 1 && row > 0 && row < ROWS - 1) {
+    // Move to floor — only if not blocked
+    if (col > 0 && col < COLS - 1 && row > 0 && row < ROWS - 1 && !this._isBlocked(col, row)) {
       this._movePlayerTo(col, row);
     }
   }
 
   _movePlayerTo(col, row) {
-    this.playerTarget = { col, row };
+    // Only set target if destination is walkable (callers for desks pass adjacent free cell)
+    if (!this._isBlocked(col, row)) {
+      this.playerTarget = { col, row };
+    }
+  }
+
+  _stepToward(fromCol, fromRow, toCol, toRow) {
+    // Move one grid step toward target; return new {col, row} respecting collision.
+    // Try axis-independent steps, prefer the dominant axis first.
+    const dc = toCol - fromCol;
+    const dr = toRow - fromRow;
+    if (Math.abs(dc) >= Math.abs(dr) && dc !== 0) {
+      const nc = fromCol + Math.sign(dc);
+      if (!this._isBlocked(nc, fromRow)) return { col: nc, row: fromRow };
+      // Try row step as fallback
+      if (dr !== 0) {
+        const nr = fromRow + Math.sign(dr);
+        if (!this._isBlocked(fromCol, nr)) return { col: fromCol, row: nr };
+      }
+    } else if (dr !== 0) {
+      const nr = fromRow + Math.sign(dr);
+      if (!this._isBlocked(fromCol, nr)) return { col: fromCol, row: nr };
+      // Try col step as fallback
+      if (dc !== 0) {
+        const nc = fromCol + Math.sign(dc);
+        if (!this._isBlocked(nc, fromRow)) return { col: nc, row: fromRow };
+      }
+    }
+    // Blocked in all directions — stay put
+    return { col: fromCol, row: fromRow };
   }
 
   _updatePlayer(delta) {
@@ -1194,29 +1306,49 @@ class ParliamentScene extends Phaser.Scene {
     if (this.playerTarget) {
       const dc = this.playerTarget.col - this._playerCol;
       const dr = this.playerTarget.row - this._playerRow;
-      if (Math.abs(dc) + Math.abs(dr) <= 1) {
-        this._playerCol = this.playerTarget.col;
-        this._playerRow = this.playerTarget.row;
+      if (Math.abs(dc) + Math.abs(dr) === 0) {
         this.playerTarget = null;
-        moved = true;
+      } else if (Math.abs(dc) + Math.abs(dr) === 1) {
+        const next = this._stepToward(this._playerCol, this._playerRow,
+                                       this.playerTarget.col, this.playerTarget.row);
+        if (next.col === this._playerCol && next.row === this._playerRow) {
+          // Blocked; give up on this target
+          this.playerTarget = null;
+        } else {
+          this._playerCol = next.col;
+          this._playerRow = next.row;
+          this.playerTarget = null;
+          moved = true;
+        }
       } else {
-        if (dc !== 0) this._playerCol += Math.sign(dc);
-        else if (dr !== 0) this._playerRow += Math.sign(dr);
-        moved = true;
+        const next = this._stepToward(this._playerCol, this._playerRow,
+                                       this.playerTarget.col, this.playerTarget.row);
+        if (next.col === this._playerCol && next.row === this._playerRow) {
+          this.playerTarget = null; // stuck
+        } else {
+          this._playerCol = next.col;
+          this._playerRow = next.row;
+          moved = true;
+        }
       }
     }
     this.playerMoveTimer -= delta;
     if (this.playerMoveTimer <= 0) {
       let nc = this._playerCol, nr = this._playerRow;
-      if (this.cursors.left.isDown || this.wasd.left.isDown) { nc--; moved = true; }
-      else if (this.cursors.right.isDown || this.wasd.right.isDown) { nc++; moved = true; }
-      else if (this.cursors.up.isDown || this.wasd.up.isDown) { nr--; moved = true; }
-      else if (this.cursors.down.isDown || this.wasd.down.isDown) { nr++; moved = true; }
-      if (moved) {
+      let keyMoved = false;
+      if (this.cursors.left.isDown || this.wasd.left.isDown) { nc--; keyMoved = true; }
+      else if (this.cursors.right.isDown || this.wasd.right.isDown) { nc++; keyMoved = true; }
+      else if (this.cursors.up.isDown || this.wasd.up.isDown) { nr--; keyMoved = true; }
+      else if (this.cursors.down.isDown || this.wasd.down.isDown) { nr++; keyMoved = true; }
+      if (keyMoved) {
         nc = Phaser.Math.Clamp(nc, 1, COLS - 2);
         nr = Phaser.Math.Clamp(nr, 1, ROWS - 2);
-        this._playerCol = nc;
-        this._playerRow = nr;
+        // Only accept if not blocked
+        if (!this._isBlocked(nc, nr)) {
+          this._playerCol = nc;
+          this._playerRow = nr;
+        }
+        moved = true; // animate even if blocked (visual feedback)
         this.playerMoveTimer = 160;
       }
     }

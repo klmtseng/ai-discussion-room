@@ -416,5 +416,58 @@ class TestServerPortArg(unittest.TestCase):
         self.assertEqual(port, 8930)
 
 
+# ── Server --config argument parsing ─────────────────────────────────────────
+
+class TestServerConfigArg(unittest.TestCase):
+    """Verify that --config <path> makes _load_config() read the specified file."""
+
+    def setUp(self):
+        import server as srv
+        srv._config_cache = None   # reset cache so _load_config() actually reads
+
+    def tearDown(self):
+        import server as srv
+        srv._config_cache = None
+
+    def test_load_config_with_override_reads_specified_file(self):
+        """_load_config() must return the content of the --config file."""
+        import tempfile, server as srv
+        four_seat_cfg = {
+            "members": [
+                {"id": "claude",     "model_display": "Claude",     "adapter": "claude", "color": "#e07830", "emblem": "star"},
+                {"id": "codex",      "model_display": "ChatGPT",    "adapter": "codex",  "color": "#10b8a0", "emblem": "knot"},
+                {"id": "gemini",     "model_display": "Gemini",     "adapter": "gemini", "color": "#8060e8", "emblem": "quad"},
+                {"id": "gemini-pro", "model_display": "Gemini Pro", "adapter": "gemini", "color": "#30c850", "emblem": "dot"},
+            ],
+            "member_system_prompt": "你是委員。",
+            "chair_system_prompt": "你是主席。",
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump(four_seat_cfg, f)
+            tmp_path = f.name
+        try:
+            original_override = srv._CONFIG_PATH_OVERRIDE
+            srv._CONFIG_PATH_OVERRIDE = tmp_path
+            cfg = srv._load_config()
+            self.assertEqual(len(cfg["members"]), 4)
+            self.assertEqual(cfg["members"][3]["id"], "gemini-pro")
+        finally:
+            srv._CONFIG_PATH_OVERRIDE = original_override
+            os.unlink(tmp_path)
+
+    def test_load_config_without_override_falls_back_to_defaults(self):
+        """Without --config override, falls back to config.json / config.example.json."""
+        import server as srv
+        original_override = srv._CONFIG_PATH_OVERRIDE
+        try:
+            srv._CONFIG_PATH_OVERRIDE = None
+            cfg = srv._load_config()
+            # Should have at least the example config members (3 by default)
+            self.assertIn("members", cfg)
+            self.assertGreaterEqual(len(cfg["members"]), 1)
+        finally:
+            srv._CONFIG_PATH_OVERRIDE = original_override
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
