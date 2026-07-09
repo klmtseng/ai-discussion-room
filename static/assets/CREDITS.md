@@ -4,12 +4,22 @@
 
 ### Kenney Tiny Dungeon
 - **File**: tilemap_dungeon.png (packed, 192×176, 16×16 tiles, 12×11 grid)
-- **Source**: https://kenney.nl/assets/tiny-dungeon
+- **Source**: https://kenney.nl/media/pages/assets/tiny-dungeon/f8422efb44-1674742415/kenney_tiny-dungeon.zip
 - **Author**: Kenney (www.kenney.nl)
 - **License**: CC0 1.0 Universal — Public Domain
 - **Downloaded**: 2026-07-08
-- **Usage**: Character sprites (tiles 84–95: knight/player, priest/chair, mage/members)
-  and dungeon tiles. Used with `setTint()` for per-AI color identity.
+- **Usage**: Decoration and wall tiles. Not currently used for characters (replaced by Urban Pack).
+
+### Kenney RPG Urban Pack
+- **File**: tilemap_urban.png (packed, 432×288, 16×16 tiles, 27×18 grid)
+- **Source**: https://kenney.nl/media/pages/assets/rpg-urban-pack/0a097d1dc7-1677578575/kenney_rpg-urban-pack.zip
+- **Author**: Kenney (www.kenney.nl)
+- **License**: CC0 1.0 Universal — Public Domain
+- **Downloaded**: 2026-07-08 (original), upgraded usage 2026-07-09
+- **Usage**: Walk-cycle character sprites (cols 23-26, rows 0-17 = 6 characters × 4-frame walk
+  animations). 6 distinct characters used for: player, chair (moderator), and up to 6 committee
+  members. Each character has idle + 3 walk frames (cols 23-26) and gentle idle bob animation.
+  Characters are tinted per-member with `setTint()` for color identity.
 
 ### Kenney Tiny Town
 - **File**: tilemap_town.png (packed, 192×176, 16×16 tiles, 12×11 grid)
@@ -17,29 +27,28 @@
 - **Author**: Kenney (www.kenney.nl)
 - **License**: CC0 1.0 Universal — Public Domain
 - **Downloaded**: 2026-07-08
-- **Usage**: Interior floor/wall tiles (currently unused in favor of programmatic room).
+- **Usage**: Reserved for future scenes. Currently unused.
 
-### Kenney RPG Urban Pack
-- **File**: tilemap_urban.png (432×288)
-- **Source**: https://kenney.nl/assets/rpg-urban-pack
-- **Author**: Kenney (www.kenney.nl)
-- **License**: CC0 1.0 Universal — Public Domain
-- **Downloaded**: 2026-07-08
-- **Usage**: Reserved for future outdoor/hallway scenes.
+## Programmatic Assets (no external files)
 
-## Programmatic Assets
+### JRPG Room Environment
+- Warm wood plank floor with grain variation, wainscoting rail, cream upper wall
+- Decorative windows with cross panes, golden picture frames between windows
+- Rich burgundy carpet with diamond pattern and fringe detail
+- Mahogany podium with scale ⚖ symbol and flag pennant, warm glow halo
+- Corner potted plants with terracotta pots, layered leaves, and berry detail
+- Window light shafts (alpha overlay)
+- All drawn with Phaser Graphics API — no external files
 
 ### AI Identity Emblems
-- 8×8 pixel badges drawn with Phaser Graphics API (no external files)
-- Three emblem types:
-  - **star** (✳ pattern): Claude — terracotta/orange tint
-  - **knot** (rope-loop): ChatGPT — teal tint
-  - **quad** (four-pointed star): Gemini — blue-purple tint
-- Colors specified in config.json `members[].color`; shapes in `members[].emblem`
-- No official logos used — abstract pixel badges only (trademark-safe)
+- 10×10 pixel badge pins drawn with Phaser Graphics API (no external files)
+- Six emblem shapes: star (✳), knot, diamond (◆), dot, moon, triangle
+- Colors from config.json `members[].color`; shapes from `members[].emblem`
+- No official logos used — abstract pixel badges (trademark-safe)
 
-### Room, Furniture, Plants
-- Drawn programmatically with Phaser Graphics API
+### Committee Desk Props
+- Open book, tea cup with steam wisps, desk lamp — drawn with Phaser Graphics API
+- Per-desk assignment cycles across members (book → tea → lamp → repeat)
 
 ## Engine
 
