@@ -300,10 +300,11 @@ class TestAnonymizerNLabels(unittest.TestCase):
             self.assertIn(f"委員{l}", prompt)
 
     def test_label_display_resolution(self):
-        """resolve_label_meta maps adapter→display following shuffle."""
+        """resolve_label_meta maps member_id→display following shuffle."""
+        # shuffle values are member IDs (in _THREE_CFG, id == adapter for all three seats)
         shuffle = {"A": "gemini", "B": "claude", "C": "codex"}
         meta = anonymizer.resolve_label_meta(shuffle, _THREE_CFG)
-        # label A → gemini → "Gemini 2.5 Flash"
+        # label A → member_id "gemini" → model_display "Gemini 2.5 Flash"
         self.assertEqual(meta["A"]["model_display"], "Gemini 2.5 Flash")
         self.assertEqual(meta["B"]["model_display"], "Claude")
         self.assertEqual(meta["C"]["model_display"], "ChatGPT")
