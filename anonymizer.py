@@ -2,13 +2,15 @@
 Anonymization layer for AI Parliament.
 
 Two jobs:
-  1. create_shuffle(seed, adapter_names) → random {label: adapter_name} mapping.
+  1. create_shuffle(seed, member_ids) → random {label: member_id} mapping.
   2. filter_self_id(text, label) → strip/replace AI self-identification phrases.
   3. build_chair_prompt(…) → construct chair input with zero model names.
 
 Upgrade 2: public_model_display_map(config) — returns {label: model_display}
   for use in public_view only; NEVER passed to chair prompt.
 Upgrade 3: N-member support — labels generated as A,B,C,D… from member count.
+Upgrade 4: ID-keyed shuffle — shuffle maps label→member_id (not adapter) so two
+  seats sharing the same adapter value (e.g. two Gemini seats) remain distinct.
 """
 import random
 import re
