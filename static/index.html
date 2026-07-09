@@ -1792,7 +1792,6 @@ class ParliamentScene extends Phaser.Scene {
         const next = this._stepToward(this._playerCol, this._playerRow,
                                        this.playerTarget.col, this.playerTarget.row);
         if (next.col === this._playerCol && next.row === this._playerRow) {
-          // Blocked; give up on this target
           this.playerTarget = null;
         } else {
           this._playerCol = next.col;
@@ -1804,7 +1803,7 @@ class ParliamentScene extends Phaser.Scene {
         const next = this._stepToward(this._playerCol, this._playerRow,
                                        this.playerTarget.col, this.playerTarget.row);
         if (next.col === this._playerCol && next.row === this._playerRow) {
-          this.playerTarget = null; // stuck
+          this.playerTarget = null;
         } else {
           this._playerCol = next.col;
           this._playerRow = next.row;
@@ -1823,26 +1822,81 @@ class ParliamentScene extends Phaser.Scene {
       if (keyMoved) {
         nc = Phaser.Math.Clamp(nc, 1, COLS - 2);
         nr = Phaser.Math.Clamp(nr, 1, ROWS - 2);
-        // Only accept if not blocked
         if (!this._isBlocked(nc, nr)) {
           this._playerCol = nc;
           this._playerRow = nr;
         }
-        moved = true; // animate even if blocked (visual feedback)
+        moved = true;
         this.playerMoveTimer = 160;
       }
     }
+
+    // Walk animation & idle bob for all characters
+    this._walkTick += delta;
+    const pc = this._playerCharRef;
+
     if (moved) {
-      this._playerAnim = (this._playerAnim + 1) % 4;
-      const bounce = (this._playerAnim === 1 || this._playerAnim === 3) ? -SCALE : 0;
-      const pc = this._playerCharRef;
-      if (pc && pc.sprite) {
+      this._playerMoving = true;
+      // Advance walk frame (4 frames at 150ms each)
+      if (this._walkTick > 150) {
+        this._playerWalkFrame = (this._playerWalkFrame + 1) % 4;
+        this._walkTick = 0;
+      }
+      if (pc && pc.sprite && pc.walkFrames) {
+        const frame = pc.walkFrames[this._playerWalkFrame];
+        pc.sprite.setFrame(frame);
+        const bounce = (this._playerWalkFrame === 1 || this._playerWalkFrame === 3) ? -SCALE : 0;
         pc.sprite.setPosition(this._px(this._playerCol), this._py(this._playerRow) + bounce);
         if (pc.lt) pc.lt.setPosition(
           this._px(this._playerCol) + TW * SCALE / 2,
-          this._py(this._playerRow) + bounce - SCALE * 4
+          this._py(this._playerRow) + bounce - SCALE * 2
         );
       }
+    } else {
+      // Idle: reset to idle frame with gentle bob
+      this._playerMoving = false;
+      if (this._walkTick > 120) this._walkTick = 0;
+      if (pc && pc.sprite && pc.idleFrame !== undefined) {
+        pc.sprite.setFrame(pc.idleFrame);
+        const phase = this._idlePhase['player'] || 0;
+        const bobY = Math.round(Math.sin(Date.now() * 0.002 + phase) * SCALE * 0.5);
+        pc.sprite.setPosition(this._px(this._playerCol), this._py(this._playerRow) + bobY);
+        if (pc.lt) pc.lt.setPosition(
+          this._px(this._playerCol) + TW * SCALE / 2,
+          this._py(this._playerRow) + bobY - SCALE * 2
+        );
+      }
+    }
+
+    // Idle bob for member chars (when not in explore mode)
+    if (!this._exploreMode) {
+      this._updateIdleBob(delta);
+    }
+  }
+
+  // Gentle idle head-bob for all seated members
+  _updateIdleBob(delta) {
+    const t = Date.now() * 0.002;
+    for (const label of this._memberLabels) {
+      const mc = this._chars[label];
+      if (!mc || !mc.sprite) continue;
+      const phase = this._idlePhase[label] || 0;
+      const bobY = Math.round(Math.sin(t + phase) * SCALE * 0.5);
+      mc.sprite.setPosition(this._px(mc.col), this._py(mc.row) + bobY);
+      if (mc.lt) mc.lt.setPosition(
+        this._px(mc.col) + TW * SCALE / 2,
+        this._py(mc.row) + bobY - SCALE * 2
+      );
+    }
+    // Chair char
+    const ch = this._chars['chair'];
+    if (ch && ch.sprite) {
+      const bobY = Math.round(Math.sin(t) * SCALE * 0.4);
+      ch.sprite.setPosition(this._px(ch.col), this._py(ch.row) + bobY);
+      if (ch.lt) ch.lt.setPosition(
+        this._px(ch.col) + TW * SCALE / 2,
+        this._py(ch.row) + bobY - SCALE * 2
+      );
     }
   }
 
@@ -1862,7 +1916,7 @@ class ParliamentScene extends Phaser.Scene {
 
   stopExplore() {
     this._exploreMode = false;
-    // Return members to desk positions
+    // Return members to desk positions and reset walk frames
     for (const label of this._memberLabels) {
       const dr = this._deskRects[label];
       if (!dr) continue;
@@ -1870,8 +1924,9 @@ class ParliamentScene extends Phaser.Scene {
       const row = dr.row - 1;
       const mc = this._chars[label];
       if (!mc) continue;
-      // Move sprite directly back to desk
       this._setCharPosition(label, col, row);
+      // Reset to idle frame
+      if (mc.idleFrame !== undefined && mc.sprite) mc.sprite.setFrame(mc.idleFrame);
     }
     // Rebuild blocked with members at desk positions
     this._rebuildFurnitureBlocked();
@@ -1911,6 +1966,13 @@ class ParliamentScene extends Phaser.Scene {
     const next = this._stepToward(mc.col, mc.row, toCol, toRow);
     if (next.col === mc.col && next.row === mc.row) return false; // stuck
     this._setCharPosition(label, next.col, next.row);
+    // Advance walk frame for this member
+    if (!this._memberWalkFrames) this._memberWalkFrames = {};
+    this._memberWalkFrames[label] = ((this._memberWalkFrames[label] || 0) + 1) % 4;
+    if (mc.walkFrames) {
+      const frame = mc.walkFrames[this._memberWalkFrames[label]];
+      mc.sprite.setFrame(frame);
+    }
     return true;
   }
 
