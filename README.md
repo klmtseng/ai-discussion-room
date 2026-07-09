@@ -190,6 +190,22 @@ Set `"enabled": false` to disable the endpoint entirely. Lower `max_exchanges_pe
 
 ---
 
+## Output Structure
+
+Each session produces five layers of output:
+
+| Layer | Source | Description |
+|---|---|---|
+| **原文並列 (Raw)** | Members | Full response text per member, visible in each member's bottom sheet |
+| **結論並列 (Conclusion table)** | Deterministic extraction | Last `【結論】…` line from each member's answer, one sentence; `null` if format not followed. Shown above chair summary — zero LLM involvement |
+| **共識點 (Consensus)** | Chair (LLM) | Points where all members substantially agree |
+| **少數派報告 (Minority report)** | Chair (LLM) | Per-divergence: which member dissents and their strongest argument, one sentence; "無——全體一致" if all agree |
+| **綜合結論 (Synthesis)** | Chair (LLM) | Chair's integrative opinion; may explicitly state "本題無共識" rather than forcing a false compromise |
+
+The conclusion table is the only layer with a structural anonymisation guarantee at the data level — it is extracted before the chair ever runs.
+
+---
+
 ## API
 
 | Endpoint | Method | Body | Description |
@@ -200,3 +216,18 @@ Set `"enabled": false` to disable the endpoint entirely. Lower `max_exchanges_pe
 | `/api/parliament/{id}/summarize` | POST | — | Re-summarise after followups |
 
 Poll every 2 seconds until `status === "done"`.
+
+Each member object in the poll response now includes a `conclusion` field (string or `null`):
+
+```json
+{
+  "members": {
+    "A": {
+      "status": "done",
+      "conclusion": "此議題需要多角度評估，建議審慎權衡利弊。",
+      "model_display": "Claude",
+      ...
+    }
+  }
+}
+```

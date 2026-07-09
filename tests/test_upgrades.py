@@ -87,7 +87,7 @@ class TestChairPromptNoModelDisplay(unittest.TestCase):
         for line in lines:
             if "【委員" in line:
                 in_section = True
-            if "請輸出以下三部分" in line:
+            if "請輸出以下四部分" in line:
                 break
             if in_section:
                 section_lines.append(line)
@@ -287,7 +287,7 @@ class TestAnonymizerNLabels(unittest.TestCase):
         for line in lines:
             if "【委員" in line:
                 in_section = True
-            if "請輸出以下三部分" in line:
+            if "請輸出以下四部分" in line:
                 break
             if in_section:
                 section_lines.append(line)

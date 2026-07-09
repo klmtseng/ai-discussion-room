@@ -622,6 +622,38 @@ function refreshMemberSheet(label) {
   document.getElementById('fuBtn').disabled = hasPending || m.status !== 'done';
 }
 
+function _buildConclusionsTable(members, labels) {
+  // Returns HTML for conclusions table; shown above chair summary.
+  // All members must be done (or have conclusion data) before calling.
+  if (!members || !labels || labels.length === 0) return '';
+  let rows = '';
+  for (const label of labels) {
+    const m = members[label];
+    if (!m) continue;
+    const color = m.color || '#888';
+    const modelName = m.model_display || label;
+    const conclusionText = (m.conclusion != null)
+      ? escHtml(m.conclusion)
+      : '<em style="color:var(--text-muted)">(未依格式提供)</em>';
+    rows += `<tr>
+      <td style="white-space:nowrap;padding:3px 8px 3px 4px;color:${color};font-weight:700;font-size:0.8rem">委員${escHtml(label)}</td>
+      <td style="padding:3px 4px;font-size:0.75rem;color:var(--text-muted);white-space:nowrap">${escHtml(modelName)}</td>
+      <td style="padding:3px 4px;font-size:0.82rem;line-height:1.5">${conclusionText}</td>
+    </tr>`;
+  }
+  return `<div style="margin-bottom:0.6rem">
+    <div style="font-size:0.72rem;font-weight:700;color:var(--accent);margin-bottom:4px;letter-spacing:0.04em">結論並列</div>
+    <table style="width:100%;border-collapse:collapse;background:#1e1410;border-radius:6px;overflow:hidden">
+      <thead><tr style="background:#2a1f14">
+        <th style="padding:4px 8px 4px 4px;text-align:left;font-size:0.7rem;color:var(--text-muted);font-weight:600">委員</th>
+        <th style="padding:4px;text-align:left;font-size:0.7rem;color:var(--text-muted);font-weight:600">模型</th>
+        <th style="padding:4px;text-align:left;font-size:0.7rem;color:var(--text-muted);font-weight:600">一句話立場</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
 function refreshChairSheet() {
   const content = document.getElementById('sheet-content');
   if (!sessionData) {
@@ -629,6 +661,11 @@ function refreshChairSheet() {
     return;
   }
   let html = '';
+  const allDone = sessionData.status === 'done';
+  // Conclusions table: show once all members are done (chair may still be running)
+  if (allDone && sessionData.members) {
+    html += _buildConclusionsTable(sessionData.members, MEMBER_LABELS);
+  }
   if (sessionData.chair_status === 'done' && sessionData.chair_summary) {
     // Upgrade 2: decorate 委員X → 委員X(ModelName) in chair summary display only (not in raw data)
     let summary = sessionData.chair_summary;
@@ -640,11 +677,11 @@ function refreshChairSheet() {
         }
       }
     }
-    html = `<div class="bubble ai"><div class="bubble-label">主席總結</div>${mdToHtml(summary)}</div>`;
+    html += `<div class="bubble ai"><div class="bubble-label">主席總結</div>${mdToHtml(summary)}</div>`;
   } else if (sessionData.chair_status === 'running') {
-    html = `<div class="bubble ai thinking"><div class="bubble-label">主席</div>整理中…</div>`;
+    html += `<div class="bubble ai thinking"><div class="bubble-label">主席</div>整理中…</div>`;
   } else {
-    html = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">等待委員完成後自動總結…</div>`;
+    html += `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">等待委員完成後自動總結…</div>`;
   }
   content.innerHTML = html;
   content.scrollTop = content.scrollHeight;

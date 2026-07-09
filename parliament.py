@@ -40,6 +40,7 @@ def create_session(question: str, config: dict) -> dict:
                 "status": "running",
                 "response": None,
                 "error": None,
+                "conclusion": None,       # deterministic extraction; None until done
                 "_adapter": adapter_name,
                 "_model_arg": next(
                     (m.get("model_arg") for m in members_cfg if m["adapter"] == adapter_name),
@@ -72,6 +73,7 @@ def public_view(session: dict) -> dict:
                 "status": m["status"],
                 "response": m.get("response"),
                 "error": m.get("error"),
+                "conclusion": m.get("conclusion"),  # deterministic; None = not provided
                 "conversation_turns": len(m.get("conversation", [])) // 2,
                 # Upgrade 2: expose model_display in public view (NOT in chair prompt)
                 "model_display": label_meta.get(label, {}).get("model_display", ""),
@@ -133,11 +135,18 @@ def _run_member(session: dict, label: str, lock: threading.Lock) -> None:
     )
     effective_system = member_override or member_system
 
+    _conclusion_instruction = (
+        "\n\n（格式要求：回答的最後一行必須以【結論】開頭，用一句話（≤40字）總結你的立場。）"
+    )
     if effective_system:
-        prompt = f"{effective_system}\n\n你的本輪代號是委員{label}。\n\n問題：{question}"
+        prompt = (
+            f"{effective_system}{_conclusion_instruction}\n\n"
+            f"你的本輪代號是委員{label}。\n\n問題：{question}"
+        )
     else:
         prompt = (
-            f"你是委員{label}。請回答以下問題，不要提及你是哪個AI模型或品牌。\n\n"
+            f"你是委員{label}。請回答以下問題，不要提及你是哪個AI模型或品牌。"
+            f"{_conclusion_instruction}\n\n"
             f"問題：{question}"
         )
 
@@ -149,10 +158,22 @@ def _run_member(session: dict, label: str, lock: threading.Lock) -> None:
     except Exception as exc:
         success, text = False, str(exc)
 
+    # Deterministic conclusion extraction: last line starting with 【結論】
+    # Never falls back to LLM; None if format not followed.
+    conclusion: Optional[str] = None
+    if success and text:
+        for line in reversed(text.splitlines()):
+            stripped = line.strip()
+            if stripped.startswith("【結論】"):
+                raw_conclusion = stripped[len("【結論】"):].strip()
+                conclusion = anonymizer.filter_self_id(raw_conclusion, label) if raw_conclusion else None
+                break
+
     with lock:
         if success and text:
             session["members"][label]["status"] = "done"
             session["members"][label]["response"] = text
+            session["members"][label]["conclusion"] = conclusion
             session["members"][label]["conversation"] = [
                 {"role": "user", "content": question},
                 {"role": "assistant", "content": text},
@@ -160,6 +181,7 @@ def _run_member(session: dict, label: str, lock: threading.Lock) -> None:
         else:
             session["members"][label]["status"] = "error"
             session["members"][label]["error"] = text or "no response"
+            session["members"][label]["conclusion"] = None
 
 
 # ---------------------------------------------------------------------------

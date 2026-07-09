@@ -336,10 +336,17 @@ def build_chair_prompt(
                 parts.append(f"委員{label} 補充：{redact_model_names(filter_self_id(a, label), extra_brands)}")
                 parts.append("")
 
-    parts.append("請輸出以下三部分：")
-    parts.append("1. 共識點（三方一致或高度相近的觀點）")
+    parts.append("請輸出以下四部分：")
+    parts.append("1. 共識點（各委員一致或高度相近的觀點）")
     parts.append("2. 分歧點（觀點有明顯差異或矛盾之處）")
-    parts.append("3. 綜合結論（主席裁量的整合意見）")
+    parts.append(
+        "3. 少數派報告（針對每個未收斂的面向：哪位委員持異議，及其最強論據，一句話；"
+        "若全體一致，此節寫「無——全體一致」）"
+    )
+    parts.append(
+        "4. 綜合結論（主席裁量的整合意見；若實質共識不存在，"
+        "允許明說「本題無共識」並止於少數派報告，不強行折衷）"
+    )
     parts.append("")
     parts.append(
         "重要：回答中嚴禁出現 Claude、ChatGPT、Gemini、Bard、Codex、"

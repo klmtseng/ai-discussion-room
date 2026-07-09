@@ -101,14 +101,33 @@ def _run_mock(name: str, prompt: str) -> Tuple[bool, str]:
     time.sleep(0.3)  # simulate latency
     short = prompt[:60].replace("\n", " ")
     responses = {
-        "claude": f"[MOCK Claude] 關於「{short}」：這是一個值得深思的問題。我認為需要從多個角度來分析。",
-        "codex":  f"[MOCK Codex] 針對「{short}」：從技術角度來看，有幾個關鍵點值得注意。",
-        "gemini": f"[MOCK Gemini] 就「{short}」而言：根據現有資訊，可以從以下幾個維度思考。",
+        "claude": (
+            f"[MOCK Claude] 關於「{short}」：這是一個值得深思的問題。我認為需要從多個角度來分析。\n"
+            f"【結論】此議題需要多角度評估，建議審慎權衡利弊。"
+        ),
+        "codex": (
+            f"[MOCK Codex] 針對「{short}」：從技術角度來看，有幾個關鍵點值得注意。\n"
+            f"【結論】從技術視角看，關鍵在於找到可操作的具體解方。"
+        ),
+        "gemini": (
+            f"[MOCK Gemini] 就「{short}」而言：根據現有資訊，可以從以下幾個維度思考。\n"
+            f"【結論】綜合多維度分析，此問題有清晰的邏輯路徑可循。"
+        ),
         # Extra mock adapters for N-member tests
-        "gemini-pro":   f"[MOCK Gemini Pro] 關於「{short}」：從高層次分析，有幾個值得注意的面向。",
-        "claude-extra": f"[MOCK Claude-2] 針對「{short}」：從另一個角度補充，這個問題有多個層面。",
+        "gemini-pro": (
+            f"[MOCK Gemini Pro] 關於「{short}」：從高層次分析，有幾個值得注意的面向。\n"
+            f"【結論】高層次分析顯示此議題需要結構性的解決方案。"
+        ),
+        "claude-extra": (
+            f"[MOCK Claude-2] 針對「{short}」：從另一個角度補充，這個問題有多個層面。\n"
+            f"【結論】補充視角顯示問題多層面，整合觀點不可或缺。"
+        ),
     }
-    return True, responses.get(name, f"[MOCK {name}] 已收到問題。")
+    default_resp = (
+        f"[MOCK {name}] 已收到問題。\n"
+        f"【結論】已收到議題，立場待進一步釐清。"
+    )
+    return True, responses.get(name, default_resp)
 
 
 # ---------------------------------------------------------------------------

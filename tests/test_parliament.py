@@ -161,6 +161,7 @@ class TestBuildChairPrompt(unittest.TestCase):
         self.assertIn("本輪議題", prompt)
         self.assertIn("共識點", prompt)
         self.assertIn("分歧點", prompt)
+        self.assertIn("少數派報告", prompt)
         self.assertIn("綜合結論", prompt)
 
     def test_all_three_done(self):
