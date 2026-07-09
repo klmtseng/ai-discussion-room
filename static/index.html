@@ -271,6 +271,151 @@ html, body {
 .bubble code { background:#0a0806; padding:0 3px; border-radius:3px; font-size:0.8em; }
 .bubble pre { background:#0a0806; padding:6px; border-radius:4px; overflow-x:auto; font-size:0.75em; margin:4px 0; }
 
+/* ── Seat management panel ── */
+#seats-panel {
+  position: fixed; inset: 0; z-index: 600;
+  background: rgba(0,0,0,0.55);
+  display: flex; align-items: flex-end;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s;
+}
+#seats-panel.open { opacity: 1; pointer-events: all; }
+#seats-inner {
+  width: 100%; max-height: 88vh;
+  background: var(--warm-dark);
+  border-top: 3px solid var(--warm-tan);
+  border-radius: 16px 16px 0 0;
+  display: flex; flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(.32,1,.36,1);
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.6);
+}
+#seats-panel.open #seats-inner { transform: translateY(0); }
+
+#seats-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.8rem 1rem 0.6rem;
+  border-bottom: 1px solid var(--warm-wood);
+  flex-shrink: 0;
+}
+#seats-title { font-weight: 900; font-size: 1rem; color: var(--accent); }
+#seats-close {
+  background: transparent; border: none;
+  color: var(--text-muted); font-size: 1.4rem;
+  cursor: pointer; line-height: 1; padding: 0.1rem 0.3rem;
+}
+#seats-close:hover { color: var(--text-light); }
+
+#seats-scroll {
+  flex: 1; overflow-y: auto;
+  padding: 0.8rem 1rem;
+  display: flex; flex-direction: column; gap: 0.6rem;
+}
+
+/* Seat card */
+.seat-card {
+  background: #1e1410;
+  border: 1px solid var(--warm-wood);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  display: flex; align-items: center; gap: 0.6rem;
+}
+.seat-color-swatch {
+  width: 16px; height: 16px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.seat-card-info { flex: 1; min-width: 0; }
+.seat-card-name { font-size: 0.88rem; font-weight: 700; color: var(--text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seat-card-sub  { font-size: 0.72rem; color: var(--text-muted); }
+.seat-card-actions { display: flex; gap: 0.3rem; flex-shrink: 0; }
+.seat-btn {
+  background: var(--warm-wood); border: none; border-radius: 5px;
+  color: var(--text-light); font-size: 0.72rem; font-weight: 700;
+  padding: 3px 8px; cursor: pointer;
+}
+.seat-btn:hover { background: var(--accent); color: var(--warm-dark); }
+.seat-btn.danger { background: #5a1a1a; color: #ff8888; }
+.seat-btn.danger:hover { background: #ff5b5b; color: #fff; }
+.seat-btn.test-btn { background: #1a3a2a; color: #5be0b0; }
+.seat-btn.test-btn:hover { background: #2a6a4a; }
+.seat-test-result { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; min-height: 1em; }
+
+/* Seats bottom bar */
+#seats-footer {
+  display: flex; gap: 0.5rem; padding: 0.7rem 1rem 0.9rem;
+  border-top: 1px solid var(--warm-wood);
+  flex-shrink: 0; align-items: center;
+}
+#seats-add-btn {
+  flex: 1;
+  background: #1a3a1a; border: 1.5px dashed var(--ok);
+  border-radius: 6px; color: var(--ok);
+  font-size: 0.82rem; font-weight: 700;
+  padding: 0.45rem 0; cursor: pointer;
+  text-align: center;
+}
+#seats-add-btn:hover { background: #2a5a2a; }
+#seats-save-btn {
+  background: var(--accent); border: none; border-radius: 6px;
+  color: var(--warm-dark); font-weight: 900;
+  font-size: 0.85rem; padding: 0.45rem 1.2rem; cursor: pointer;
+}
+#seats-save-btn:disabled { opacity: 0.4; cursor: default; }
+#seats-save-btn:not(:disabled):hover { background: var(--accent2); color: #fff; }
+#seats-provider-note {
+  font-size: 0.65rem; color: var(--text-muted);
+  padding: 0 1rem 0.6rem; text-align: center; flex-shrink: 0;
+}
+#seats-provider-note a { color: var(--text-muted); text-decoration: underline dotted; }
+#seats-err { font-size: 0.72rem; color: var(--err); padding: 0 1rem 0.4rem; display: none; }
+#seats-ok  { font-size: 0.72rem; color: var(--ok);  padding: 0 1rem 0.4rem; display: none; }
+
+/* Seat edit form (inline below card list) */
+#seats-edit-form {
+  background: #14100c;
+  border: 1.5px solid var(--warm-tan);
+  border-radius: 8px;
+  padding: 0.8rem;
+  display: none; flex-direction: column; gap: 0.55rem;
+}
+#seats-edit-form.open { display: flex; }
+#seats-edit-form label { font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 2px; }
+#seats-edit-form input, #seats-edit-form select, #seats-edit-form textarea {
+  width: 100%;
+  background: #1e1410; border: 1px solid var(--warm-wood);
+  border-radius: 5px; color: var(--text-light);
+  font-size: 0.82rem; padding: 0.35rem 0.55rem;
+  outline: none;
+}
+#seats-edit-form input:focus, #seats-edit-form select:focus, #seats-edit-form textarea:focus {
+  border-color: var(--accent);
+}
+#seats-edit-form textarea { resize: vertical; min-height: 4rem; font-family: inherit; }
+#seats-edit-form select option { background: var(--warm-dark); }
+.color-presets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
+.color-preset {
+  width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+  border: 2.5px solid transparent;
+}
+.color-preset.selected { border-color: #fff; }
+.emblem-presets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
+.emblem-preset {
+  font-size: 0.72rem; padding: 2px 7px;
+  background: var(--warm-dark); border: 1.5px solid var(--warm-wood);
+  border-radius: 4px; cursor: pointer; color: var(--text-muted);
+}
+.emblem-preset.selected { border-color: var(--accent); color: var(--accent); }
+.edit-form-actions { display: flex; gap: 0.4rem; margin-top: 0.3rem; }
+.edit-form-actions button {
+  flex: 1; border: none; border-radius: 5px;
+  font-weight: 700; font-size: 0.82rem;
+  padding: 0.4rem; cursor: pointer;
+}
+#seat-form-ok  { background: var(--accent); color: var(--warm-dark); }
+#seat-form-ok:hover { background: var(--accent2); color: #fff; }
+#seat-form-cancel { background: var(--warm-wood); color: var(--text-light); }
+#seat-form-cancel:hover { background: #5a3a20; }
+
 </style>
 </head>
 <body>
@@ -296,6 +441,7 @@ html, body {
     <span id="explore-timer"></span>
     <button id="langToggleBtn" onclick="toggleLang()" style="pointer-events:all;background:var(--warm-dark);border:1.5px solid var(--warm-tan);border-radius:5px;color:var(--text-muted);font-size:0.62rem;font-weight:700;padding:2px 6px;cursor:pointer;white-space:nowrap;">EN</button>
     <button id="exploreBtn" onclick="toggleExplore()">探索</button>
+    <button id="seatsBtn" onclick="openSeatsPanel()" style="pointer-events:all;background:var(--warm-dark);border:1.5px solid var(--warm-tan);border-radius:5px;color:var(--text-muted);font-size:0.72rem;font-weight:700;padding:2px 6px;cursor:pointer;white-space:nowrap;">⚙</button>
     <span class="hud-badge pending" id="badgeChair">主席 待機</span>
   </div>
 </div>
@@ -305,6 +451,67 @@ html, body {
 
 <!-- Game canvas -->
 <div id="game-wrap"></div>
+
+<!-- Seat management panel -->
+<div id="seats-panel" onclick="handleSeatsPanelBgClick(event)">
+  <div id="seats-inner">
+    <div id="seats-header">
+      <span id="seats-title">⚙ 席位管理</span>
+      <button id="seats-close" onclick="closeSeatsPanel()">✕</button>
+    </div>
+    <div id="seats-scroll">
+      <div id="seats-card-list"></div>
+      <!-- Inline edit form -->
+      <div id="seats-edit-form">
+        <div>
+          <label id="seat-form-name-lbl">顯示名稱</label>
+          <input id="seat-form-name" type="text" maxlength="40" placeholder="Claude">
+        </div>
+        <div>
+          <label id="seat-form-id-lbl">ID（唯一，英數-）</label>
+          <input id="seat-form-id" type="text" maxlength="32" placeholder="claude">
+        </div>
+        <div>
+          <label id="seat-form-adapter-lbl">Adapter</label>
+          <select id="seat-form-adapter">
+            <option value="claude">claude</option>
+            <option value="codex">codex</option>
+            <option value="gemini">gemini</option>
+          </select>
+        </div>
+        <div>
+          <label id="seat-form-modelarg-lbl">Model Arg（選填，e.g. gemini-2.5-flash）</label>
+          <input id="seat-form-modelarg" type="text" placeholder="留空=使用預設">
+        </div>
+        <div>
+          <label id="seat-form-color-lbl">顏色</label>
+          <div class="color-presets" id="seat-color-presets"></div>
+        </div>
+        <div>
+          <label id="seat-form-emblem-lbl">徽章</label>
+          <div class="emblem-presets" id="seat-emblem-presets"></div>
+        </div>
+        <div>
+          <label id="seat-form-sp-lbl">System Prompt（選填，≤2000字）</label>
+          <textarea id="seat-form-sp" maxlength="2000" rows="3"></textarea>
+        </div>
+        <div class="edit-form-actions">
+          <button id="seat-form-ok" onclick="seatFormConfirm()">確認</button>
+          <button id="seat-form-cancel" onclick="seatFormCancel()">取消</button>
+        </div>
+      </div>
+    </div>
+    <div id="seats-err"></div>
+    <div id="seats-ok"></div>
+    <div id="seats-provider-note">
+      <span id="seats-provider-note-text">接入全新供應商（Ollama 等）需新增 adapter，見 </span><a href="#" id="seats-readme-link" onclick="return false">README</a>
+    </div>
+    <div id="seats-footer">
+      <button id="seats-add-btn" onclick="seatAddNew()">＋ 新增席位</button>
+      <button id="seats-save-btn" onclick="seatsSave()">儲存</button>
+    </div>
+  </div>
+</div>
 
 <!-- Bottom sheet -->
 <div id="sheet">
@@ -379,6 +586,33 @@ const I18N = {
     memberCharLabel: (l) => l,
     playerLabel: '你',
     langToggle: 'EN',
+    seatsBtn: '⚙',
+    seatsPanelTitle: '⚙ 席位管理',
+    seatsClose: '✕',
+    seatsAddBtn: '＋ 新增席位',
+    seatsSaveBtn: '儲存',
+    seatsProviderNote: '接入全新供應商（Ollama 等）需新增 adapter，見 ',
+    seatsReadme: 'README',
+    seatsSaveOk: '已儲存，房間重建中…',
+    seatsSaveFail: '儲存失敗：',
+    seatsValidErr: '格式錯誤：',
+    seatsTestOk: (ms) => `✓ ${ms}ms`,
+    seatsTestFail: (e) => `✗ ${e}`,
+    seatsTestCooldown: (s) => `冷卻 ${s}s`,
+    seatsTestNote: '（消耗一次額度）',
+    seatEditBtn: '編輯',
+    seatDeleteBtn: '刪除',
+    seatTestBtn: '測試',
+    seatFormNameLbl: '顯示名稱',
+    seatFormIdLbl: 'ID（唯一，英數-）',
+    seatFormAdapterLbl: 'Adapter',
+    seatFormModelArgLbl: 'Model Arg（選填，e.g. gemini-2.5-flash）',
+    seatFormColorLbl: '顏色',
+    seatFormEmblemLbl: '徽章',
+    seatFormSpLbl: 'System Prompt（選填，≤2000字）',
+    seatFormOk: '確認',
+    seatFormCancel: '取消',
+    seatFormModelArgPh: '留空=使用預設',
   },
   en: {
     title: '⚖ AI Parliament',
@@ -428,6 +662,33 @@ const I18N = {
     memberCharLabel: (l) => l,
     playerLabel: 'You',
     langToggle: '中',
+    seatsBtn: '⚙',
+    seatsPanelTitle: '⚙ Seat Management',
+    seatsClose: '✕',
+    seatsAddBtn: '＋ Add Seat',
+    seatsSaveBtn: 'Save',
+    seatsProviderNote: 'Adding a new provider (Ollama etc.) requires a new adapter — see ',
+    seatsReadme: 'README',
+    seatsSaveOk: 'Saved — rebuilding room…',
+    seatsSaveFail: 'Save failed: ',
+    seatsValidErr: 'Validation error: ',
+    seatsTestOk: (ms) => `✓ ${ms}ms`,
+    seatsTestFail: (e) => `✗ ${e}`,
+    seatsTestCooldown: (s) => `cooldown ${s}s`,
+    seatsTestNote: '(uses one credit)',
+    seatEditBtn: 'Edit',
+    seatDeleteBtn: 'Delete',
+    seatTestBtn: 'Test',
+    seatFormNameLbl: 'Display Name',
+    seatFormIdLbl: 'ID (unique, [a-z0-9-])',
+    seatFormAdapterLbl: 'Adapter',
+    seatFormModelArgLbl: 'Model Arg (optional, e.g. gemini-2.5-flash)',
+    seatFormColorLbl: 'Color',
+    seatFormEmblemLbl: 'Emblem',
+    seatFormSpLbl: 'System Prompt (optional, ≤2000 chars)',
+    seatFormOk: 'OK',
+    seatFormCancel: 'Cancel',
+    seatFormModelArgPh: 'Leave blank for default',
   },
 };
 
@@ -480,6 +741,26 @@ function applyLang() {
   }
   // Re-render HUD badges if session running
   if (sessionData) { renderHud(sessionData); renderLegend(sessionData); }
+  // Translate seats panel labels
+  const sp = document.getElementById('seats-title'); if (sp) sp.textContent = t('seatsPanelTitle');
+  const sc = document.getElementById('seats-close'); if (sc) sc.textContent = t('seatsClose');
+  const sa = document.getElementById('seats-add-btn'); if (sa) sa.textContent = t('seatsAddBtn');
+  const ss = document.getElementById('seats-save-btn'); if (ss) ss.textContent = t('seatsSaveBtn');
+  const pn = document.getElementById('seats-provider-note-text'); if (pn) pn.textContent = t('seatsProviderNote');
+  const rl = document.getElementById('seats-readme-link'); if (rl) rl.textContent = t('seatsReadme');
+  // Form labels
+  const fl = (id, key) => { const el = document.getElementById(id); if (el) el.textContent = t(key); };
+  fl('seat-form-name-lbl', 'seatFormNameLbl');
+  fl('seat-form-id-lbl', 'seatFormIdLbl');
+  fl('seat-form-adapter-lbl', 'seatFormAdapterLbl');
+  fl('seat-form-modelarg-lbl', 'seatFormModelArgLbl');
+  fl('seat-form-color-lbl', 'seatFormColorLbl');
+  fl('seat-form-emblem-lbl', 'seatFormEmblemLbl');
+  fl('seat-form-sp-lbl', 'seatFormSpLbl');
+  const fok = document.getElementById('seat-form-ok'); if (fok) fok.textContent = t('seatFormOk');
+  const fcan = document.getElementById('seat-form-cancel'); if (fcan) fcan.textContent = t('seatFormCancel');
+  const fma = document.getElementById('seat-form-modelarg'); if (fma) fma.placeholder = t('seatFormModelArgPh');
+  if (_seatsData) renderSeatCards();
 }
 
 function toggleLang() {
@@ -1021,6 +1302,234 @@ function openEncounterSheet(label) {
     // Fall through to normal member sheet
     openMemberSheet(label);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SEAT MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+
+const SEAT_COLORS = ['#e07830','#10b8a0','#8060e8','#30c850','#e84060','#e0c020','#4080e0','#e060c0'];
+const SEAT_EMBLEMS = ['star','knot','quad','dot','moon','tri'];
+
+let _seatsData = null;       // [{id,model_display,adapter,model_arg,color,emblem,system_prompt},…]
+let _seatsEditIdx = null;    // index being edited (null = add new)
+let _seatsDirty = false;     // unsaved local changes
+
+function openSeatsPanel() {
+  // Stop explore mode so member count changes don't conflict
+  if (exploreActive) _stopExplore();
+  document.getElementById('seats-panel').classList.add('open');
+  _loadSeatsData();
+}
+
+function closeSeatsPanel() {
+  document.getElementById('seats-panel').classList.remove('open');
+  seatFormClose();
+  // Reset status messages
+  const err = document.getElementById('seats-err'); err.style.display = 'none';
+  const ok  = document.getElementById('seats-ok');  ok.style.display  = 'none';
+}
+
+function handleSeatsPanelBgClick(e) {
+  if (e.target === document.getElementById('seats-panel')) closeSeatsPanel();
+}
+
+async function _loadSeatsData() {
+  const { status, data } = await apiGet('/api/config/members');
+  if (status !== 200) { _showSeatsErr('Failed to load members'); return; }
+  _seatsData = JSON.parse(JSON.stringify(data.members));  // deep copy
+  _seatsDirty = false;
+  renderSeatCards();
+}
+
+function renderSeatCards() {
+  const list = document.getElementById('seats-card-list');
+  if (!_seatsData) { list.innerHTML = ''; return; }
+  list.innerHTML = _seatsData.map((m, i) => {
+    const color = m.color || '#888';
+    const testResultId = `seat-test-result-${i}`;
+    return `<div class="seat-card" id="seat-card-${i}">
+      <div class="seat-color-swatch" style="background:${escHtml(color)}"></div>
+      <div class="seat-card-info">
+        <div class="seat-card-name">${escHtml(m.model_display || m.id)}</div>
+        <div class="seat-card-sub">${escHtml(m.adapter)}${m.model_arg ? ' / ' + escHtml(m.model_arg) : ''}</div>
+        <div class="seat-test-result" id="${testResultId}"></div>
+      </div>
+      <div class="seat-card-actions">
+        <button class="seat-btn test-btn" onclick="seatTest(${i})">${t('seatTestBtn')}<br><span style="font-size:0.6rem;font-weight:400">${t('seatsTestNote')}</span></button>
+        <button class="seat-btn" onclick="seatEdit(${i})">${t('seatEditBtn')}</button>
+        <button class="seat-btn danger" onclick="seatDelete(${i})">${t('seatDeleteBtn')}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function seatEdit(i) {
+  _seatsEditIdx = i;
+  const m = _seatsData[i];
+  document.getElementById('seat-form-name').value = m.model_display || '';
+  document.getElementById('seat-form-id').value = m.id || '';
+  document.getElementById('seat-form-adapter').value = m.adapter || 'claude';
+  document.getElementById('seat-form-modelarg').value = m.model_arg || '';
+  document.getElementById('seat-form-sp').value = m.system_prompt || '';
+  _renderColorPresets(m.color || SEAT_COLORS[0]);
+  _renderEmblemPresets(m.emblem || SEAT_EMBLEMS[0]);
+  seatFormOpen();
+}
+
+function seatAddNew() {
+  _seatsEditIdx = null;
+  document.getElementById('seat-form-name').value = '';
+  document.getElementById('seat-form-id').value = '';
+  document.getElementById('seat-form-adapter').value = 'claude';
+  document.getElementById('seat-form-modelarg').value = '';
+  document.getElementById('seat-form-sp').value = '';
+  _renderColorPresets(SEAT_COLORS[(_seatsData ? _seatsData.length : 0) % SEAT_COLORS.length]);
+  _renderEmblemPresets(SEAT_EMBLEMS[0]);
+  seatFormOpen();
+}
+
+function seatDelete(i) {
+  if (!_seatsData) return;
+  _seatsData.splice(i, 1);
+  _seatsDirty = true;
+  seatFormClose();
+  renderSeatCards();
+  _showSeatsOk('');
+}
+
+function seatFormOpen() {
+  document.getElementById('seats-edit-form').classList.add('open');
+  document.getElementById('seats-scroll').scrollTop = 99999;
+}
+
+function seatFormClose() {
+  document.getElementById('seats-edit-form').classList.remove('open');
+  _seatsEditIdx = null;
+}
+
+function seatFormCancel() { seatFormClose(); }
+
+function seatFormConfirm() {
+  const name = document.getElementById('seat-form-name').value.trim();
+  const id = document.getElementById('seat-form-id').value.trim();
+  const adapter = document.getElementById('seat-form-adapter').value.trim();
+  const modelArg = document.getElementById('seat-form-modelarg').value.trim() || null;
+  const sp = document.getElementById('seat-form-sp').value.trim();
+  const color = _getSelectedColor();
+  const emblem = _getSelectedEmblem();
+
+  if (!name || !id || !adapter) { _showSeatsErr(t('seatsValidErr') + 'name/id/adapter required'); return; }
+  if (!/^[a-z0-9\-]{1,32}$/.test(id)) { _showSeatsErr(t('seatsValidErr') + 'id pattern [a-z0-9-]{1,32}'); return; }
+  if (sp.length > 2000) { _showSeatsErr(t('seatsValidErr') + 'system_prompt > 2000 chars'); return; }
+
+  const entry = { id, model_display: name, adapter, model_arg: modelArg, color, emblem, system_prompt: sp };
+
+  if (_seatsEditIdx !== null) {
+    _seatsData[_seatsEditIdx] = entry;
+  } else {
+    if (!_seatsData) _seatsData = [];
+    _seatsData.push(entry);
+  }
+  _seatsDirty = true;
+  seatFormClose();
+  renderSeatCards();
+  _showSeatsErr('');
+}
+
+function _renderColorPresets(selectedColor) {
+  const el = document.getElementById('seat-color-presets');
+  el.innerHTML = SEAT_COLORS.map(c =>
+    `<div class="color-preset${c.toLowerCase() === selectedColor.toLowerCase() ? ' selected' : ''}"
+      style="background:${c}" data-color="${c}" onclick="selectSeatColor('${c}')"></div>`
+  ).join('');
+}
+
+function selectSeatColor(c) {
+  document.querySelectorAll('.color-preset').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll(`.color-preset[data-color="${c}"]`).forEach(el => el.classList.add('selected'));
+}
+
+function _getSelectedColor() {
+  const sel = document.querySelector('.color-preset.selected');
+  return sel ? sel.dataset.color : SEAT_COLORS[0];
+}
+
+function _renderEmblemPresets(selectedEmblem) {
+  const el = document.getElementById('seat-emblem-presets');
+  el.innerHTML = SEAT_EMBLEMS.map(e =>
+    `<div class="emblem-preset${e === selectedEmblem ? ' selected' : ''}"
+      data-emblem="${e}" onclick="selectSeatEmblem('${e}')">${e}</div>`
+  ).join('');
+}
+
+function selectSeatEmblem(e) {
+  document.querySelectorAll('.emblem-preset').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll(`.emblem-preset[data-emblem="${e}"]`).forEach(el => el.classList.add('selected'));
+}
+
+function _getSelectedEmblem() {
+  const sel = document.querySelector('.emblem-preset.selected');
+  return sel ? sel.dataset.emblem : SEAT_EMBLEMS[0];
+}
+
+async function seatTest(i) {
+  const m = _seatsData[i];
+  const resultEl = document.getElementById(`seat-test-result-${i}`);
+  if (!resultEl) return;
+  resultEl.textContent = '…';
+  const { status, data } = await apiPost('/api/config/members/test', {
+    adapter: m.adapter, model_arg: m.model_arg || null,
+  });
+  if (status === 429) {
+    resultEl.textContent = t('seatsTestCooldown', data.wait_seconds || '?');
+  } else if (status === 200) {
+    resultEl.textContent = data.ok ? t('seatsTestOk', data.latency_ms) : t('seatsTestFail', data.snippet || 'error');
+  } else {
+    resultEl.textContent = t('seatsTestFail', (data.error || status));
+  }
+}
+
+async function seatsSave() {
+  if (!_seatsData) return;
+  const saveBtn = document.getElementById('seats-save-btn');
+  saveBtn.disabled = true;
+  _showSeatsErr('');
+  const { status, data } = await _apiPut('/api/config/members', { members: _seatsData });
+  if (status === 200) {
+    _seatsData = JSON.parse(JSON.stringify(data.members));
+    _seatsDirty = false;
+    renderSeatCards();
+    _showSeatsOk(t('seatsSaveOk'));
+    // Rebuild room: fetch fresh /api/config and re-init members
+    await loadConfigMembers();
+  } else if (status === 400 && data.errors) {
+    _showSeatsErr(t('seatsValidErr') + data.errors.join('; '));
+  } else {
+    _showSeatsErr(t('seatsSaveFail') + (data.error || status));
+  }
+  saveBtn.disabled = false;
+}
+
+async function _apiPut(path, body) {
+  const r = await fetch(path, {
+    method: 'PUT', headers: apiHeaders(),
+    body: JSON.stringify(body),
+  });
+  try { return { status: r.status, data: await r.json() }; }
+  catch (_) { return { status: r.status, data: {} }; }
+}
+
+function _showSeatsErr(msg) {
+  const el = document.getElementById('seats-err');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+function _showSeatsOk(msg) {
+  const el = document.getElementById('seats-ok');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
 }
 
 // ═══════════════════════════════════════════════════════════════
