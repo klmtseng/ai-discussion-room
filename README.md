@@ -136,6 +136,32 @@ they are never sent to the chair AI to preserve anonymisation.
 
 ---
 
+## Language Support (zh / en)
+
+The UI is fully bilingual. All member prompts, chair instructions, and sheet labels switch together.
+
+**In the browser**: click the **「EN」/ 「中」** toggle button (top-right HUD) to switch between English and Chinese. Your preference is saved in `localStorage`.
+
+**Default language**: detected from `navigator.language` — `zh-*` locales default to Chinese; everything else defaults to English.
+
+**API**: pass `"lang": "en"` in the POST body to `/api/parliament` to run a session in English mode:
+```bash
+curl -X POST http://localhost:8930/api/parliament \
+  -H "Content-Type: application/json" \
+  -H "X-Parliament-Pin: <pin>" \
+  -d '{"question": "Should AI be regulated?", "lang": "en"}'
+```
+Omitting `lang` defaults to `"zh"`. Any value other than `"en"` or `"zh"` also falls back to `"zh"`.
+
+**What switches with lang**:
+- Member prompts: EN version uses `"Conclusion: "` marker; ZH uses `"【結論】"` marker
+- Conclusion extraction: both markers are tried regardless of lang (cross-language answers work)
+- Chair prompt: four-section headers in English (`1. Consensus / 2. Divergences / 3. Minority Report / 4. Chair's Synthesis`)
+- Anonymisation token in chair-bound text: `[an AI]` (en) vs `[某AI]` (zh)
+- All UI strings: sheet titles, badges, hints, table headers, placeholders
+
+---
+
 ## Running Tests
 
 ```bash
