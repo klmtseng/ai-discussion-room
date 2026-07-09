@@ -1738,7 +1738,7 @@ class ParliamentScene extends Phaser.Scene {
     this._playerMoving = false;
     // Player: use charIdx 5 (dark hair) with warm orange tint
     this._chars['player'] = this._createUrbanChar(
-      this._playerCol, this._playerRow, 5, 0xe8a030, '你', null);
+      this._playerCol, this._playerRow, 5, 0xe8a030, t('playerLabel'), null);
     this._playerCharRef = this._chars['player'];
     this._idlePhase['player'] = Math.PI / 3;
   }
@@ -1784,7 +1784,7 @@ class ParliamentScene extends Phaser.Scene {
 
     // Name badge background (pill shape) — only for members with labels
     let badge = null;
-    if (labelText && labelText !== '你') {
+    if (labelText && labelText !== I18N.zh.playerLabel && labelText !== I18N.en.playerLabel) {
       badge = this.add.graphics().setDepth(6);
       const bw = Math.max(20, labelText.length * SCALE * 5 + 4);
       const bh = fontSize + 4;
