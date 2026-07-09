@@ -1070,89 +1070,238 @@ class ParliamentScene extends Phaser.Scene {
     return img;
   }
 
+  // ── Room background: Pokémon/Animal Crossing interior quality ──────────────
   _buildRoom() {
     const g = this.add.graphics();
     const W = this.scale.width;
     const H = this.scale.height;
+    const s = SCALE;
 
-    // Fill entire viewport background
+    // ── 0. Background fill ──
     g.fillStyle(0x1a100a);
     g.fillRect(0, 0, W, H);
 
-    // Wood floor tiles
-    for (let col = 1; col < COLS - 1; col++) {
-      for (let row = 1; row < ROWS - 1; row++) {
-        const shade = ((col + row) % 3 === 0) ? 0x6b4423 :
-                      ((col + row) % 3 === 1) ? 0x7a5230 : 0x704a28;
-        g.fillStyle(shade);
-        g.fillRect(this._px(col), this._py(row), TW * SCALE, TH * SCALE);
-      }
-    }
-
-    // Center carpet
-    for (let col = 3; col < COLS - 3; col++) {
-      for (let row = 4; row < ROWS - 4; row++) {
-        const ci = ((col + row)) % 3;
-        const c = [0x5c2060, 0x6b2870, 0x5c2060][ci];
-        g.fillStyle(c);
-        g.fillRect(this._px(col), this._py(row), TW * SCALE - 1, TH * SCALE - 1);
-      }
-    }
-
-    // Walls (top, bottom, left, right borders)
+    // ── 1. Wall surface (top 2 rows + side strips) ──
+    // Warm cream upper wall
     for (let col = 0; col < COLS; col++) {
-      g.fillStyle(0x3d2510);
-      g.fillRect(this._px(col), 0, TW * SCALE, TH * SCALE); // top
-      g.fillRect(this._px(col), this._py(ROWS - 1), TW * SCALE, TH * SCALE); // bottom
+      for (let row = 0; row < 2; row++) {
+        const shade = (col % 2 === 0) ? 0xd4b896 : 0xcaae8c;
+        g.fillStyle(shade);
+        g.fillRect(this._px(col), this._py(row), TW*s, TH*s);
+      }
     }
-    for (let row = 1; row < ROWS - 1; row++) {
-      g.fillStyle(0x3d2510);
-      g.fillRect(0, this._py(row), TW * SCALE, TH * SCALE); // left
-      g.fillRect(this._px(COLS - 1), this._py(row), TW * SCALE, TH * SCALE); // right
+    // Side walls (rows 2 onward)
+    for (let row = 2; row < ROWS - 1; row++) {
+      const shade = (row % 2 === 0) ? 0xb89870 : 0xae9068;
+      g.fillStyle(shade);
+      g.fillRect(0, this._py(row), TW*s, TH*s);                    // left
+      g.fillRect(this._px(COLS-1), this._py(row), TW*s, TH*s);     // right
+    }
+    // Bottom wall row
+    for (let col = 0; col < COLS; col++) {
+      g.fillStyle(0x8b5e3c);
+      g.fillRect(this._px(col), this._py(ROWS-1), TW*s, TH*s);
     }
 
-    // Brick texture on top wall
-    for (let col = 0; col < COLS; col += 2) {
-      g.fillStyle(0x2d1a08);
-      g.fillRect(this._px(col), 2, TW * SCALE, 2);
-    }
+    // ── 2. Wainscoting rail — horizontal strip at row 2 bottom ──
+    // This is the wood trim panel between wall and floor
+    g.fillStyle(0x6b4020);
+    g.fillRect(TW*s, this._py(2) - 2*s, (COLS-2)*TW*s, 3*s);
+    g.fillStyle(0x8b5a2a);
+    g.fillRect(TW*s, this._py(2) - 2*s, (COLS-2)*TW*s, 1*s);
+    // Horizontal highlight strip
+    g.fillStyle(0xa07040);
+    g.fillRect(TW*s, this._py(2) - 2*s + s, (COLS-2)*TW*s, 1*s);
 
-    // Door (bottom center)
-    const doorCol = Math.floor(COLS / 2) - 1;
-    g.fillStyle(0x5a3820);
-    g.fillRect(this._px(doorCol), this._py(ROWS - 1), TW * SCALE * 2, TH * SCALE);
-    g.fillStyle(0x8b6040);
-    g.fillRect(this._px(doorCol) + 3, this._py(ROWS - 1) + 3, TW * SCALE * 2 - 6, TH * SCALE - 6);
-
-    // Windows on top wall
-    for (const wc of [2, 6, 10, 14, 17]) {
-      if (wc > 0 && wc < COLS - 1) {
-        g.fillStyle(0x7db8e8);
-        g.fillRect(this._px(wc) + 2, 2, TW * SCALE - 4, TH * SCALE - 4);
-        g.fillStyle(0x5090c0);
-        g.fillRect(this._px(wc) + 2, TH * SCALE / 2 - 1, TW * SCALE - 4, 2);
-        g.fillRect(this._px(wc) + TW * SCALE / 2 - 1, 2, 2, TH * SCALE - 4);
+    // ── 3. Wood plank floor (rows 2 to ROWS-2) ──
+    // Alternating warm wood plank colors with grain direction cues
+    for (let col = 1; col < COLS - 1; col++) {
+      for (let row = 2; row < ROWS - 1; row++) {
+        // Base plank color varies by column (plank direction = horizontal)
+        const plankShade = (col % 3 === 0) ? 0x9b6b3a :
+                           (col % 3 === 1) ? 0xa87840 : 0x946432;
+        g.fillStyle(plankShade);
+        g.fillRect(this._px(col), this._py(row), TW*s, TH*s);
+        // Plank grain line at top of each tile (lighter streak)
+        const grainShade = (col % 3 === 0) ? 0xb07844 :
+                           (col % 3 === 1) ? 0xbc884c : 0xa8703c;
+        g.fillStyle(grainShade);
+        g.fillRect(this._px(col), this._py(row), TW*s, 1*s);
+        // Subtle vertical plank gap every 2 cols
+        if (col % 2 === 0) {
+          g.fillStyle(0x7a5028, 0.4);
+          g.fillRect(this._px(col) + TW*s - 1, this._py(row), 1, TH*s);
+        }
       }
     }
 
-    // Corner plants
-    this._drawPlant(g, 1, 1);
-    this._drawPlant(g, COLS - 2, 1);
-    this._drawPlant(g, 1, ROWS - 3);
-    this._drawPlant(g, COLS - 2, ROWS - 3);
+    // ── 4. Center carpet — rich red/burgundy with decorative border ──
+    const carpetC1 = 4, carpetC2 = COLS - 4;
+    const carpetR1 = 4, carpetR2 = ROWS - 4;
+    // Carpet fill
+    for (let col = carpetC1; col < carpetC2; col++) {
+      for (let row = carpetR1; row < carpetR2; row++) {
+        const isBorder = (col === carpetC1 || col === carpetC2-1 ||
+                          row === carpetR1 || row === carpetR2-1);
+        const isInner2 = (col === carpetC1+1 || col === carpetC2-2 ||
+                           row === carpetR1+1 || row === carpetR2-2);
+        let cc;
+        if (isBorder) cc = 0x8b2040;
+        else if (isInner2) cc = 0xc03060;
+        else {
+          // Diamond pattern inside
+          const di = ((col - carpetC1) + (row - carpetR1)) % 4;
+          cc = [0x7a1a48, 0x882050, 0x7a1a48, 0x9a2858][di];
+        }
+        g.fillStyle(cc);
+        g.fillRect(this._px(col), this._py(row), TW*s - 1, TH*s - 1);
+      }
+    }
+    // Carpet fringe on bottom edge
+    for (let col = carpetC1; col < carpetC2; col++) {
+      g.fillStyle(0xc04878);
+      for (let fi = 0; fi < 3; fi++) {
+        const fx = this._px(col) + (fi * TW*s/3) + 2*s;
+        g.fillRect(fx, this._py(carpetR2), 2*s, 3*s);
+      }
+    }
+
+    // ── 5. Windows on upper wall (top row, evenly spaced) ──
+    const winCols = COLS <= 12 ? [2, 5, 9] : [2, 5, 9, 13, 17];
+    for (const wc of winCols) {
+      if (wc > 0 && wc < COLS - 1) {
+        const wx = this._px(wc), wy = this._py(0);
+        const ws = TW*s;
+        // Window outer frame (dark wood)
+        g.fillStyle(0x5a3820);
+        g.fillRect(wx + 1*s, wy + 1*s, ws - 2*s, TH*s - 2*s);
+        // Glass — sky blue
+        g.fillStyle(0x98d8f8);
+        g.fillRect(wx + 2*s, wy + 2*s, ws - 4*s, TH*s - 4*s);
+        // Cross pane dividers
+        g.fillStyle(0x7ab8d8);
+        g.fillRect(wx + 2*s, wy + TH*s/2 - s, ws - 4*s, 2*s);
+        g.fillRect(wx + ws/2 - s, wy + 2*s, 2*s, TH*s - 4*s);
+        // Light glint
+        g.fillStyle(0xe8f4ff, 0.7);
+        g.fillRect(wx + 3*s, wy + 3*s, 3*s, 2*s);
+        // Window light shaft down to floor (very soft)
+        g.fillStyle(0xffe8b0, 0.06);
+        g.fillRect(wx + 2*s, wy + TH*s, ws - 4*s, (ROWS - 3) * TH*s);
+      }
+    }
+
+    // ── 6. Decorative wall hangings between windows ──
+    const framePositions = COLS <= 12 ? [3, 7] : [3, 7, 11, 15];
+    for (const fc of framePositions) {
+      if (fc < COLS - 1) {
+        const fx = this._px(fc) + 2*s, fy = this._py(0) + 2*s;
+        // Picture frame (golden)
+        g.fillStyle(0xc8901a);
+        g.fillRect(fx, fy, TW*s - 4*s, TH*s - 4*s);
+        g.fillStyle(0x6a4010);
+        g.fillRect(fx + 2*s, fy + 2*s, TW*s - 8*s, TH*s - 8*s);
+        // Abstract art inside (colored shape)
+        g.fillStyle(0xc84040, 0.8);
+        g.fillRect(fx + 3*s, fy + 3*s, 3*s, 5*s);
+        g.fillStyle(0x4080c0, 0.8);
+        g.fillRect(fx + 6*s, fy + 3*s, 3*s, 5*s);
+      }
+    }
+
+    // ── 7. Door (bottom center) — warm wood double door ──
+    const doorCol = Math.floor(COLS / 2) - 1;
+    const dx = this._px(doorCol), dy = this._py(ROWS - 1);
+    // Door surround
+    g.fillStyle(0x5a3820);
+    g.fillRect(dx - s, dy, TW*s*2 + 2*s, TH*s);
+    // Door panels (two panels)
+    for (let di = 0; di < 2; di++) {
+      const dpx = dx + di * TW*s + 2*s;
+      g.fillStyle(0xc88040);
+      g.fillRect(dpx, dy + 2*s, TW*s - 4*s, TH*s - 4*s);
+      // Panel recessed detail
+      g.fillStyle(0xa86030);
+      g.fillRect(dpx + 2*s, dy + 4*s, TW*s - 8*s, TH*s - 8*s);
+      // Door knob
+      g.fillStyle(0xd4a820);
+      g.fillRect(dpx + TW*s - 5*s, dy + TH*s/2 - s, 2*s, 2*s);
+    }
+    // Door frame highlight
+    g.fillStyle(0xe8c080, 0.4);
+    g.fillRect(dx - s + 1, dy, 2, TH*s - 2);
+
+    // ── 8. Corner potted plants (4 corners) ──
+    this._drawJRPGPlant(g, 1, 2);
+    this._drawJRPGPlant(g, COLS - 2, 2);
+    if (ROWS > 14) {
+      this._drawJRPGPlant(g, 1, ROWS - 3);
+      this._drawJRPGPlant(g, COLS - 2, ROWS - 3);
+    }
+
+    // ── 9. Warm ambient glow near podium position (alpha circle illusion) ──
+    const podCenterX = this._px(Math.floor(COLS / 2)) + TW*s/2;
+    const podTopY = this._py(2);
+    // Soft warm radial glow (multiple expanding rects getting more transparent)
+    const glowColors = [
+      [0xffe8a0, 0.12], [0xffcc60, 0.08], [0xffb830, 0.05], [0xffa800, 0.03],
+    ];
+    const glowRadii = [2, 4, 6, 8]; // in tile units
+    for (let gi = 0; gi < glowColors.length; gi++) {
+      const [gc, ga] = glowColors[gi];
+      const gr = glowRadii[gi] * TW * s;
+      g.fillStyle(gc, ga);
+      g.fillRect(podCenterX - gr, podTopY - gr/2, gr*2, gr*2);
+    }
+
+    // ── 10. Wainscoting panels on side walls (left & right) ──
+    for (let row = 2; row < ROWS - 1; row++) {
+      // Left side panel texture
+      g.fillStyle(0x9a7040);
+      g.fillRect(2*s, this._py(row) + 2*s, TW*s - 4*s, TH*s - 4*s);
+      g.fillStyle(0xb08040, 0.5);
+      g.fillRect(2*s, this._py(row) + 2*s, TW*s - 4*s, 1*s);
+      // Right side
+      g.fillStyle(0x9a7040);
+      g.fillRect(this._px(COLS-1) + 2*s, this._py(row) + 2*s, TW*s - 4*s, TH*s - 4*s);
+      g.fillStyle(0xb08040, 0.5);
+      g.fillRect(this._px(COLS-1) + 2*s, this._py(row) + 2*s, TW*s - 4*s, 1*s);
+    }
 
     this._roomGraphics = g;
   }
 
-  _drawPlant(g, col, row) {
+  // Lush potted plant (Animal Crossing style)
+  _drawJRPGPlant(g, col, row) {
     const x = this._px(col), y = this._py(row);
     const s = SCALE;
-    g.fillStyle(0x8b4520);
-    g.fillRect(x + 4*s, y + 8*s, 8*s, 6*s);
-    g.fillStyle(0x2a8030);
-    g.fillRect(x + 2*s, y + 3*s, 12*s, 7*s);
-    g.fillStyle(0x38a040);
-    g.fillRect(x + 4*s, y, 8*s, 5*s);
+    // Terracotta pot
+    g.fillStyle(0xc86830);
+    g.fillRect(x + 4*s, y + 9*s, 8*s, 5*s);
+    g.fillStyle(0xa85028);
+    g.fillRect(x + 5*s, y + 10*s, 6*s, 3*s);
+    // Pot rim
+    g.fillStyle(0xd87840);
+    g.fillRect(x + 3*s, y + 8*s, 10*s, 2*s);
+    // Soil
+    g.fillStyle(0x4a2a10);
+    g.fillRect(x + 4*s, y + 8*s, 8*s, 2*s);
+    // Dark leaves (back)
+    g.fillStyle(0x1a7020);
+    g.fillRect(x + 3*s, y + 2*s, 10*s, 7*s);
+    g.fillRect(x + 5*s, y + 0, 6*s, 4*s);
+    // Mid leaves
+    g.fillStyle(0x28a030);
+    g.fillRect(x + 4*s, y + 3*s, 8*s, 5*s);
+    g.fillRect(x + 6*s, y + 0, 4*s, 5*s);
+    // Light leaf tips
+    g.fillStyle(0x48c848);
+    g.fillRect(x + 5*s, y + 0, 6*s, 2*s);
+    g.fillRect(x + 3*s, y + 4*s, 4*s, 2*s);
+    g.fillRect(x + 9*s, y + 4*s, 4*s, 2*s);
+    // Small flower/berry detail
+    g.fillStyle(0xe83060);
+    g.fillRect(x + 7*s, y + 1*s, 2*s, 2*s);
   }
 
   _buildFurniture(labels) {
@@ -1163,10 +1312,10 @@ class ParliamentScene extends Phaser.Scene {
     const g = this.add.graphics();
     this._furnitureGraphics = g;
 
-    // Podium (top center, spans 3 cols)
+    // ── Podium (top center, spans 3 cols) — JRPG lectern style ──
     const podCol = Math.floor(COLS / 2) - 1;
     const podRow = 2;
-    this._drawDesk(g, podCol, podRow, 3, 1, 0x7a5c1a, 0xb08020, '⚖', 0xffe066);
+    this._drawJRPGPodium(g, podCol, podRow);
     this._podiumRect = { col: podCol, row: podRow, w: 3, h: 2 };
 
     if (labels.length === 0) return;
@@ -1199,18 +1348,21 @@ class ParliamentScene extends Phaser.Scene {
         const hexColor = md.color || '#5b80ff';
         const intColor = hexToInt(hexColor);
         const col = startCol + ci * (deskW + deskGap);
-        this._drawDesk(g, col, deskRow, deskW, 1, intColor & 0x404040 ? intColor - 0x202020 : 0x203060,
-                       intColor, label, intColor);
-        this._drawChair(g, col, deskRow - 1);
+
+        this._drawJRPGDesk(g, col, deskRow, deskW, label, intColor);
+        this._drawJRPGChair(g, col + Math.floor(deskW / 2), deskRow - 1, intColor);
         this._deskRects[label] = { col, row: deskRow, w: deskW, h: 2, label };
 
-        // Draw AI emblem badge on desk
+        // Draw AI emblem badge on desk (center)
         const emblem = md.emblem || 'dot';
         const emblFn = EMBLEMS[emblem] || EMBLEMS.dot;
-        // Badge at center of desk surface
-        const bx = this._px(col) + (deskW * TW * SCALE / 2) - 4 * SCALE;
-        const by = this._py(deskRow) + TH * SCALE / 2 - 4 * SCALE;
+        const bx = this._px(col) + (deskW * TW * SCALE / 2) - 5 * SCALE;
+        const by = this._py(deskRow) + TH * SCALE * 0.3 - 5 * SCALE;
         emblFn(g, bx, by, intColor);
+
+        // Small desk props (book/tea cup/lamp) depending on position
+        const propType = ci % 3;
+        this._drawDeskProp(g, col, deskRow, deskW, propType, intColor);
       }
     }
 
@@ -1218,86 +1370,245 @@ class ParliamentScene extends Phaser.Scene {
     if (this._blocked) this._rebuildFurnitureBlocked();
   }
 
-  _drawDesk(g, col, row, w, h, baseColor, topColor, label, labelColor) {
+  // JRPG-style podium — raised lectern with flag/cloth drape
+  _drawJRPGPodium(g, col, row) {
     const x = this._px(col), y = this._py(row);
-    const W = w * TW * SCALE, H = h * TH * SCALE;
-    g.fillStyle(0x000000, 0.3);
-    g.fillRect(x + 2, y + 2, W, H);
-    g.fillStyle(baseColor);
-    g.fillRect(x, y, W, H);
-    g.fillStyle(topColor);
-    g.fillRect(x + 1, y + 1, W - 2, H - 4);
-    // Label text on desk
-    const lc = '#' + (labelColor & 0xffffff).toString(16).padStart(6, '0');
-    const t = this.add.text(x + W / 2, y + H * 0.3, label, {
-      fontSize: `${SCALE * 5}px`, color: lc, fontFamily: 'monospace', resolution: 2,
+    const w = 3 * TW * SCALE, h = TH * SCALE;
+    const s = SCALE;
+
+    // Drop shadow
+    g.fillStyle(0x000000, 0.35);
+    g.fillRect(x + 3*s, y + 3*s, w, h + 4*s);
+
+    // Podium body (rich mahogany)
+    g.fillStyle(0x6a3a10);
+    g.fillRect(x, y, w, h + 4*s);
+    // Top surface (lighter)
+    g.fillStyle(0xc07030);
+    g.fillRect(x + 1*s, y + 1*s, w - 2*s, h - 2*s);
+    // Front face (darker wood)
+    g.fillStyle(0x8a4820);
+    g.fillRect(x + 1*s, y + h - 2*s, w - 2*s, 4*s);
+
+    // Gold trim along top edge
+    g.fillStyle(0xd4a820);
+    g.fillRect(x + 1*s, y + 1*s, w - 2*s, 2*s);
+    g.fillRect(x + 1*s, y, w - 2*s, 1*s);
+
+    // Scale symbol ⚖ (three horizontal bars)
+    g.fillStyle(0xffe066);
+    const cx = x + w/2;
+    const cy = y + h/2;
+    g.fillRect(cx - 6*s, cy - 1*s, 12*s, 2*s);   // beam
+    g.fillRect(cx - 1*s, cy - 4*s, 2*s, 6*s);      // pillar
+    g.fillRect(cx - 5*s, cy + 1*s, 4*s, 1*s);      // left pan
+    g.fillRect(cx + 1*s, cy + 1*s, 4*s, 1*s);      // right pan
+
+    // Small flag/pennant on left side
+    g.fillStyle(0xb83040);
+    g.fillRect(x - 2*s, y - 8*s, 1*s, 10*s);   // flagpole
+    g.fillStyle(0xe84050);
+    g.fillRect(x - 1*s, y - 8*s, 8*s, 5*s);    // flag body
+    g.fillStyle(0xffe066);
+    g.fillRect(x, y - 7*s, 4*s, 2*s);           // gold stripe on flag
+
+    // Label text on podium top
+    const t = this.add.text(x + w/2, y + h*0.4, '⚖', {
+      fontSize: `${SCALE * 7}px`, color: '#ffe066', fontFamily: 'monospace', resolution: 2,
     }).setOrigin(0.5, 0.5).setDepth(2);
     this._furnitureTexts.push(t);
   }
 
-  _drawChair(g, col, row) {
-    const x = this._px(col) + TW * SCALE / 4;
-    const y = this._py(row) + TH * SCALE / 4;
-    const s = TW * SCALE / 2;
+  // JRPG-style committee desk — warm wood with color accent trim
+  _drawJRPGDesk(g, col, row, deskW, label, labelColor) {
+    const x = this._px(col), y = this._py(row);
+    const w = deskW * TW * SCALE, h = TH * SCALE;
+    const s = SCALE;
+
+    // Drop shadow
+    g.fillStyle(0x000000, 0.3);
+    g.fillRect(x + 2*s, y + 2*s, w, h + 4*s);
+
+    // Desk body — warm dark wood
+    g.fillStyle(0x7a4820);
+    g.fillRect(x, y, w, h + 4*s);
+    // Desk top surface — medium wood tone
+    g.fillStyle(0xb87040);
+    g.fillRect(x + 1*s, y + 1*s, w - 2*s, h - 2*s);
+    // Wood grain streaks (subtle)
+    g.fillStyle(0xc07848, 0.5);
+    for (let gi = 0; gi < 3; gi++) {
+      g.fillRect(x + (gi + 1) * (w / 4), y + 2*s, 1*s, h - 4*s);
+    }
+    // Front panel — accent color strip
+    g.fillStyle(labelColor, 0.7);
+    g.fillRect(x + 1*s, y + h - 3*s, w - 2*s, 3*s);
+    // Bottom desk legs suggestion
+    g.fillStyle(0x5a3210);
+    g.fillRect(x + 2*s, y + h, 3*s, 4*s);
+    g.fillRect(x + w - 5*s, y + h, 3*s, 4*s);
+
+    // Label text — member name on front panel
+    const lc = '#' + (labelColor & 0xffffff).toString(16).padStart(6, '0');
+    const t = this.add.text(x + w / 2, y + h * 0.35, label, {
+      fontSize: `${SCALE * 5}px`, color: lc, fontFamily: 'monospace', resolution: 2,
+      stroke: '#1a0a04', strokeThickness: 2,
+    }).setOrigin(0.5, 0.5).setDepth(2);
+    this._furnitureTexts.push(t);
+  }
+
+  // JRPG-style padded chair with colored cushion
+  _drawJRPGChair(g, col, row, accentColor) {
+    const x = this._px(col) + TW * SCALE * 0.1;
+    const y = this._py(row) + TH * SCALE * 0.1;
+    const w = TW * SCALE * 0.8;
+    const h = TH * SCALE * 0.8;
+    const s = SCALE;
+
+    // Chair frame (dark wood)
     g.fillStyle(0x4a2a10);
-    g.fillRect(x, y, s, s);
-    g.fillStyle(0x6a4020);
-    g.fillRect(x + 1, y + 1, s - 2, s / 2);
+    g.fillRect(x, y, w, h);
+    // Cushion surface (accent-tinted)
+    g.fillStyle(accentColor, 0.6);
+    g.fillRect(x + 1*s, y + 1*s, w - 2*s, h/2);
+    // Chair back rest (top strip)
+    g.fillStyle(0x6a3a18);
+    g.fillRect(x, y, w, 2*s);
+    // Cushion highlight
+    g.fillStyle(0xffffff, 0.15);
+    g.fillRect(x + 2*s, y + 2*s, w/2, 1*s);
+  }
+
+  // Small desk props: book, tea cup, or lamp
+  _drawDeskProp(g, deskCol, deskRow, deskW, propType, accentColor) {
+    const s = SCALE;
+    const dx = this._px(deskCol) + (deskW - 1) * TW * SCALE + 2*s;
+    const dy = this._py(deskRow) + 2*s;
+    if (propType === 0) {
+      // Open book
+      g.fillStyle(0xf0e8d8);
+      g.fillRect(dx, dy, 7*s, 5*s);
+      g.fillStyle(0xd0c8b8);
+      g.fillRect(dx + 3*s, dy, 1*s, 5*s);
+      g.fillStyle(0x808080, 0.4);
+      g.fillRect(dx + 1*s, dy + 1*s, 1*s, 3*s);
+      g.fillRect(dx + 5*s, dy + 1*s, 1*s, 3*s);
+    } else if (propType === 1) {
+      // Tea cup
+      g.fillStyle(0xf5f0e8);
+      g.fillRect(dx + 1*s, dy + 1*s, 6*s, 4*s);
+      g.fillStyle(0xe8d0b0);
+      g.fillRect(dx, dy + 2*s, 8*s, 2*s);
+      // Steam wisps
+      g.fillStyle(0xffffff, 0.4);
+      g.fillRect(dx + 2*s, dy - 2*s, 1*s, 2*s);
+      g.fillRect(dx + 5*s, dy - 3*s, 1*s, 3*s);
+      // Tea color inside
+      g.fillStyle(0xc88040, 0.6);
+      g.fillRect(dx + 2*s, dy + 2*s, 4*s, 2*s);
+    } else {
+      // Desk lamp (small)
+      g.fillStyle(0x808880);
+      g.fillRect(dx + 3*s, dy, 2*s, 5*s);   // stem
+      g.fillRect(dx + 1*s, dy + 5*s, 6*s, 1*s); // base
+      g.fillStyle(0xd4c020);
+      g.fillRect(dx, dy - 2*s, 8*s, 3*s);   // shade
+      // Lamp glow
+      g.fillStyle(0xffee80, 0.3);
+      g.fillRect(dx - 2*s, dy + 1*s, 12*s, 4*s);
+    }
   }
 
   _buildChairChar() {
     const podCol = Math.floor(COLS / 2);
     const podRow = 3;
-    this._chars['chair'] = this._createSpriteChar(podCol, podRow, DT.CHAR_PRIEST, 0xffe066, '⚖', 'star');
+    // Chair: use charIdx 0 (green shirt) with gold tint — distinguished look
+    this._chars['chair'] = this._createUrbanChar(podCol, podRow, 0, 0xffe8a0, '⚖', 'star');
+    this._idlePhase['chair'] = 0;
   }
 
   _buildPlayerChar() {
     this._playerCol = Math.floor(COLS / 2);
     this._playerRow = ROWS - 3;
-    this._playerAnim = 0;
-    this._chars['player'] = this._createSpriteChar(
-      this._playerCol, this._playerRow, DT.CHAR_KNIGHT, 0xe8a030, '你', null);
+    this._playerWalkFrame = 0;
+    this._playerMoving = false;
+    // Player: use charIdx 5 (dark hair) with warm orange tint
+    this._chars['player'] = this._createUrbanChar(
+      this._playerCol, this._playerRow, 5, 0xe8a030, '你', null);
     this._playerCharRef = this._chars['player'];
+    this._idlePhase['player'] = Math.PI / 3;
   }
 
-  _createSpriteChar(col, row, frame, tint, labelText, emblem) {
+  // Create a character using the Kenney Urban Pack walk-cycle sprite
+  // charIdx: 0-5 (which urban pack character)
+  // tint: optional hex color tint
+  // labelText: name label shown above sprite
+  // emblem: key into EMBLEMS dict (for badge)
+  _createUrbanChar(col, row, charIdx, tint, labelText, emblem) {
     const x = this._px(col);
     const y = this._py(row);
-    // Use Kenney dungeon sprite tile as character
-    const sprite = this.add.image(x, y, 'dungeon', frame)
+    // Urban pack: 27 cols × 18 rows; chars at cols 23-26, rows = charIdx * 3 + 0..2
+    // Frame index in spritesheet = row * 27 + col
+    // Down-facing idle: charIdx*3+0, cols 23 (idle)
+    const idleFrame = (URBAN_CHARS[charIdx % URBAN_CHARS.length]) * 27 + 23;
+    const walkFrame1 = (URBAN_CHARS[charIdx % URBAN_CHARS.length]) * 27 + 24;
+    const walkFrame2 = (URBAN_CHARS[charIdx % URBAN_CHARS.length]) * 27 + 25;
+    const walkFrame3 = (URBAN_CHARS[charIdx % URBAN_CHARS.length]) * 27 + 26;
+    const walkFrames = [idleFrame, walkFrame1, walkFrame2, walkFrame3];
+
+    const sprite = this.add.image(x, y, 'urban', idleFrame)
       .setOrigin(0, 0)
       .setScale(SCALE)
       .setDepth(5);
     if (tint) sprite.setTint(tint);
 
-    // Emblem badge graphic (drawn above sprite head) — only for roles that have one
+    // Emblem badge graphic (drawn above sprite head)
     const eg = this.add.graphics().setDepth(6);
     if (emblem && EMBLEMS[emblem] && labelText) {
-      // Position badge centered above sprite, 2px above top edge
-      const bx = x + Math.floor(TW * SCALE / 2) - 4;
-      const by = y - 10;
+      const bx = x + Math.floor(TW * SCALE / 2) - 5 * SCALE;
+      const by = y - 12 * SCALE;
       EMBLEMS[emblem](eg, bx, by, tint || 0xffffff);
     }
 
-    // Label text above sprite — use readable font size (min 8px), no background box
+    // Name label above sprite — readable with outline
     const fontSize = Math.max(8, Math.round(SCALE * 5));
     const lt = this.add.text(x + TW * SCALE / 2, y - SCALE * 2, labelText || '', {
       fontSize: `${fontSize}px`, color: '#ffffff', fontFamily: 'monospace', resolution: 2,
-      stroke: '#1a1008', strokeThickness: 3,
+      stroke: '#1a0a04', strokeThickness: 3,
     }).setOrigin(0.5, 1).setDepth(7);
-    // Only show label if there's text
     lt.setVisible(!!labelText);
 
-    return { col, row, frame, tint, sprite, eg, lt, label: labelText };
+    // Name badge background (pill shape) — only for members with labels
+    let badge = null;
+    if (labelText && labelText !== '你') {
+      badge = this.add.graphics().setDepth(6);
+      const bw = Math.max(20, labelText.length * SCALE * 5 + 4);
+      const bh = fontSize + 4;
+      const bx2 = x + TW * SCALE / 2 - bw / 2;
+      const by2 = y - SCALE * 2 - bh;
+      badge.fillStyle(0x1a0a04, 0.7);
+      badge.fillRect(bx2, by2, bw, bh);
+      badge.fillStyle(tint || 0xffffff, 0.3);
+      badge.fillRect(bx2, by2, bw, 1);
+    }
+
+    return {
+      col, row, charIdx, tint,
+      walkFrames, idleFrame,
+      sprite, eg, lt, badge,
+      label: labelText,
+    };
   }
 
   initMembers(data) {
-    // Build member chars from server data
+    // Destroy old member chars
     for (const key of Object.keys(this._chars)) {
       if (key !== 'chair' && key !== 'player') {
-        if (this._chars[key].sprite) this._chars[key].sprite.destroy();
-        if (this._chars[key].eg) this._chars[key].eg.destroy();
-        if (this._chars[key].lt) this._chars[key].lt.destroy();
+        const ch = this._chars[key];
+        if (ch.sprite) ch.sprite.destroy();
+        if (ch.eg) ch.eg.destroy();
+        if (ch.lt) ch.lt.destroy();
+        if (ch.badge) ch.badge.destroy();
       }
     }
     this._memberLabels = Object.keys(data.members);
@@ -1313,22 +1624,22 @@ class ParliamentScene extends Phaser.Scene {
     // Rebuild furniture with member data
     this._buildFurniture(this._memberLabels);
 
-    // Create member sprites in desk positions
-    const charFrames = [DT.CHAR_MAGE, DT.CHAR_ROGUE, DT.CHAR_ELF, DT.CHAR_ORC, DT.CHAR_GOBLIN];
+    // Urban pack character indices for members (avoid 0=chair, 5=player)
+    const memberCharIndices = [1, 2, 3, 4, 0, 5];
+
     for (let i = 0; i < this._memberLabels.length; i++) {
       const label = this._memberLabels[i];
       const dr = this._deskRects[label];
       if (!dr) continue;
-      // Center sprite within desk width
       const col = dr.col + Math.floor(dr.w / 2);
       const row = dr.row - 1;
       const md = this._memberData[label];
       const intColor = hexToInt(md.color);
-      const frame = charFrames[i % charFrames.length];
+      const charIdx = memberCharIndices[i % memberCharIndices.length];
       // Keep two words so sibling models stay distinguishable
-      // ("Gemini Pro" vs "Gemini 2.5 Flash" → "Gemini Pro" / "Gemini 2.5")
       const shortName = md.model_display.split(' ').slice(0, 2).join(' ');
-      this._chars[label] = this._createSpriteChar(col, row, frame, intColor, shortName, md.emblem);
+      this._chars[label] = this._createUrbanChar(col, row, charIdx, intColor, shortName, md.emblem);
+      this._idlePhase[label] = i * (Math.PI * 2 / Math.max(1, this._memberLabels.length));
     }
 
     // Rebuild bubbles for new label set
@@ -1590,8 +1901,8 @@ class ParliamentScene extends Phaser.Scene {
     mc.col = col;
     mc.row = row;
     mc.sprite.setPosition(this._px(col), this._py(row));
-    if (mc.lt) mc.lt.setPosition(this._px(col) + TW * SCALE / 2, this._py(row) - SCALE * 4);
-    if (mc.eg) mc.eg.setPosition(0, 0); // graphics are absolute-positioned, no action needed
+    if (mc.lt) mc.lt.setPosition(this._px(col) + TW * SCALE / 2, this._py(row) - SCALE * 2);
+    // badge and eg are absolute-positioned graphics — no action needed
   }
 
   _stepMemberToward(label, toCol, toRow) {
