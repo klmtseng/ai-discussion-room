@@ -1,8 +1,19 @@
 # AI 眾議院 (AI Parliament)
 
-Bring-your-own-subscription multi-AI deliberation tool.
-Ask one question, get answers from Claude + ChatGPT + Gemini simultaneously,
-then have a chair AI synthesise consensus, disagreements, and a conclusion — all anonymised.
+The only multi-LLM deliberation chamber that runs on your existing
+Claude / ChatGPT / Gemini **subscriptions** (zero API cost, bring-your-own-subscription)
+and lets you walk around a pixel JRPG parliament while the members deliberate.
+
+Ask one question, get answers from all members simultaneously, then a chair AI
+synthesises consensus, disagreements, and a conclusion — with the members
+**structurally anonymised** to the chair (no brand token can reach it), so the
+synthesis can't play favourites. No API keys, no vendor lock-in. MIT.
+
+Related projects for comparison: [karpathy/llm-council](https://github.com/karpathy/llm-council)
+(OpenRouter API, tab UI), [the-ai-counsel](https://github.com/jacob-bd/the-ai-counsel)
+(API keys, debate rounds), [PolyGPT](https://github.com/ncvgl/polygpt) (web-login
+side-by-side, no synthesis), [agent-office](https://github.com/harishkotra/agent-office)
+(pixel office, agents only talk to each other).
 
 > **ToS Warning**: This tool calls your personal CLI subscriptions locally.
 > Do NOT deploy this as a public service. Each user must supply their own authenticated CLIs.
