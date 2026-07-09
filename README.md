@@ -149,6 +149,36 @@ All CLI calls return instant stub responses. Useful for verifying the full API f
 
 ---
 
+## 探索模式 (Explore Mode)
+
+Click the **「探索」** button (top-right HUD) to activate free-roam mode.
+
+**Gameplay**: AI members leave their desks and wander the chamber. When two members become adjacent (Manhattan distance = 1), they hold a short 3-turn conversation on a light topic (last debate question or a casual prompt). Speech bubbles appear above each speaker for ~4 seconds. Click a member during explore mode to read the full exchange in the bottom sheet.
+
+**Auto-off**: Explore mode closes automatically after **30 minutes** (countdown shown next to button). Starting a new debate question also closes it and returns members to their desks.
+
+### Quota cost warning
+
+Each encounter = **3 CLI calls** (one per dialogue turn). Under the default throttle:
+- Cooldown between encounters: **120 seconds** (global, all pairs share the clock)
+- Hourly cap: **10 encounters per hour** → max ~30 CLI calls/hour
+
+Adjusting in `config.json`:
+
+```json
+{
+  "exploration": {
+    "enabled": true,
+    "cooldown_seconds": 120,
+    "max_exchanges_per_hour": 10
+  }
+}
+```
+
+Set `"enabled": false` to disable the endpoint entirely. Lower `max_exchanges_per_hour` for lighter quota usage. The server returns HTTP 429 with `wait_seconds` when throttled — the frontend will not retry until the cooldown expires.
+
+---
+
 ## API
 
 | Endpoint | Method | Body | Description |
