@@ -1215,6 +1215,76 @@ function hexToInt(hex) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// AMBIENT CHAT CORPUS (zero LLM — pure frontend random pool)
+// ═══════════════════════════════════════════════════════════════
+// Paired exchanges (~8 pairs each lang): [A-line, B-line].
+// Single lines are solo utterances; {name} is replaced with a random label.
+const AMBIENT_CORPUS = {
+  zh: {
+    single: [
+      '今天人真多…',
+      '剛那題好難答。',
+      '休息一下真好。',
+      '這議題比我想的複雜。',
+      '剛才講太快了嗎？',
+      '等等要說的話先想好。',
+      '今天氣氛不錯。',
+      '欸，{name} 你剛說什麼？',
+      '我的觀點跟大家不太一樣。',
+      '這個問題值得再討論。',
+      '咦，{name} 怎麼在這？',
+      '有沒有人要喝水？',
+      '議事廳好久沒這麼熱鬧了。',
+      '我剛才的結論有點太短。',
+      '下一題應該會比較輕鬆。',
+      '剛才沒時間把話說完。',
+      '這個話題我有很多想法。',
+    ],
+    pairs: [
+      ['剛那題你答得如何？', '還行，但我覺得說得不夠清楚。'],
+      ['你剛結論也太短了吧。', '夠用了啦，重點有到就好。'],
+      ['今天議題有點燒腦。', '對啊，我腦子還沒轉過來。'],
+      ['{name} 剛才那個觀點我不太同意。', '嗯？說來聽聽？'],
+      ['你好像一直在想事情。', '在整理剛才的論點啦。'],
+      ['這種場合你不緊張嗎？', '一開始緊張，講著講著就習慣了。'],
+      ['休息時間太短了。', '就是說，根本沒辦法好好整理思路。'],
+      ['今天人超多的。', '對啊，比上次熱鬧多了。'],
+    ],
+  },
+  en: {
+    single: [
+      'Busy day in the chamber.',
+      'That last question was tough.',
+      'Nice to catch a breather.',
+      'This topic runs deeper than I thought.',
+      'Was I speaking too fast just now?',
+      'Gathering my thoughts for the next round.',
+      'Good energy in here today.',
+      'Hey {name}, did you catch what they said?',
+      'My take is a bit different from the others.',
+      'This question deserves more airtime.',
+      'Oh, {name} — didn\'t expect to see you here.',
+      'Anyone up for a water break?',
+      'Haven\'t seen the chamber this lively in a while.',
+      'My conclusion was probably too brief.',
+      'The next topic should be a bit lighter.',
+      'Ran out of time to finish my point.',
+      'I have a lot to say about this one.',
+    ],
+    pairs: [
+      ['How did you handle that last question?', 'Managed, but I don\'t think I was clear enough.'],
+      ['Your conclusion was pretty short.', 'Short and to the point — works for me.'],
+      ['Today\'s topic is a real brain-burner.', 'Tell me about it, still processing.'],
+      ['{name}\'s point just now — I\'m not fully convinced.', 'Yeah? Let\'s hear your take.'],
+      ['You seem lost in thought.', 'Just sorting out my argument from before.'],
+      ['Do you get nervous in sessions like this?', 'At first, yeah. You get used to it.'],
+      ['The break is way too short.', 'Barely enough time to collect yourself.'],
+      ['Big turnout today.', 'Right? Way more than last time.'],
+    ],
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════
 // EXPLORATION MODE
 // ═══════════════════════════════════════════════════════════════
 let exploreActive = false;
@@ -1227,6 +1297,95 @@ let exploreEncounterCooldownTimer = null;
 let exploreEncounterBusy = false;
 const EXPLORE_AUTO_OFF_SECS = 30 * 60; // 30 minutes
 const EXPLORE_ENCOUNTER_FRONTEND_COOLDOWN = 30; // seconds between encounter attempts
+
+// Ambient chat state
+let _ambientChatTimer = null;       // setTimeout handle
+let _ambientChatPaused = new Set(); // labels paused due to LLM encounter
+const AMBIENT_CHAT_MIN_MS = 6000;
+const AMBIENT_CHAT_MAX_MS = 12000;
+const AMBIENT_BUBBLE_DURATION_MS = 3000;
+const AMBIENT_MAX_ACTIVE = 2;       // max simultaneous ambient bubbles
+let _ambientActiveCount = 0;
+
+function _pickAmbientLine(text, labels) {
+  // Replace {name} placeholder with a random other label
+  if (!text.includes('{name}')) return text;
+  const others = labels.filter(l => !text.startsWith(l));
+  const pick = others[Math.floor(Math.random() * others.length)] || labels[0];
+  return text.replace('{name}', pick);
+}
+
+function _scheduleAmbientChat() {
+  if (_ambientChatTimer) { clearTimeout(_ambientChatTimer); _ambientChatTimer = null; }
+  if (!exploreActive) return;
+  const delay = AMBIENT_CHAT_MIN_MS + Math.random() * (AMBIENT_CHAT_MAX_MS - AMBIENT_CHAT_MIN_MS);
+  _ambientChatTimer = setTimeout(_fireAmbientChat, delay);
+}
+
+function _fireAmbientChat() {
+  _ambientChatTimer = null;
+  if (!exploreActive || !gameScene) { return; }
+
+  const corpus = AMBIENT_CORPUS[LANG] || AMBIENT_CORPUS['zh'];
+  // Roaming labels = those NOT paused (by LLM encounter or debate)
+  const available = (gameScene._memberLabels || []).filter(l => !_ambientChatPaused.has(l));
+  if (available.length === 0) { _scheduleAmbientChat(); return; }
+
+  // Try pair exchange if ≥2 available and we have budget
+  if (available.length >= 2 && _ambientActiveCount + 2 <= AMBIENT_MAX_ACTIVE && corpus.pairs.length > 0) {
+    // 30% chance of pair exchange
+    if (Math.random() < 0.3) {
+      const pair = corpus.pairs[Math.floor(Math.random() * corpus.pairs.length)];
+      // Shuffle available; pick two
+      const shuffled = available.slice().sort(() => Math.random() - 0.5);
+      const labelA = shuffled[0], labelB = shuffled[1];
+      _ambientActiveCount += 2;
+      // Show A, then after a short gap show B
+      const lineA = _pickAmbientLine(pair[0], available);
+      const lineB = _pickAmbientLine(pair[1], available);
+      gameScene.showAmbientBubble(labelA, lineA);
+      setTimeout(() => {
+        if (!exploreActive) return;
+        gameScene.showAmbientBubble(labelB, lineB);
+        setTimeout(() => {
+          if (gameScene) { gameScene.clearAmbientBubble(labelB); }
+          _ambientActiveCount = Math.max(0, _ambientActiveCount - 1);
+        }, AMBIENT_BUBBLE_DURATION_MS);
+      }, 1500);
+      setTimeout(() => {
+        if (gameScene) { gameScene.clearAmbientBubble(labelA); }
+        _ambientActiveCount = Math.max(0, _ambientActiveCount - 1);
+      }, AMBIENT_BUBBLE_DURATION_MS + 1500);
+      _scheduleAmbientChat();
+      return;
+    }
+  }
+
+  // Solo utterance
+  if (_ambientActiveCount >= AMBIENT_MAX_ACTIVE) { _scheduleAmbientChat(); return; }
+  const label = available[Math.floor(Math.random() * available.length)];
+  const line = corpus.single[Math.floor(Math.random() * corpus.single.length)];
+  const text = _pickAmbientLine(line, available);
+  _ambientActiveCount++;
+  gameScene.showAmbientBubble(label, text);
+  setTimeout(() => {
+    if (gameScene) { gameScene.clearAmbientBubble(label); }
+    _ambientActiveCount = Math.max(0, _ambientActiveCount - 1);
+  }, AMBIENT_BUBBLE_DURATION_MS);
+
+  _scheduleAmbientChat();
+}
+
+function _stopAmbientChat() {
+  if (_ambientChatTimer) { clearTimeout(_ambientChatTimer); _ambientChatTimer = null; }
+  _ambientChatPaused.clear();
+  _ambientActiveCount = 0;
+  if (gameScene) {
+    for (const label of (gameScene._memberLabels || [])) {
+      gameScene.clearAmbientBubble(label);
+    }
+  }
+}
 
 // Store last encounter exchange per pair for sheet display
 let _lastEncounterData = null; // {exchange, topic, labelA, labelB}
@@ -1246,6 +1405,10 @@ function _startExplore() {
   document.getElementById('exploreBtn').classList.add('active');
   document.getElementById('exploreBtn').textContent = t('exploreBtnActive');
   gameScene.startExplore();
+  // Kick off ambient chat
+  _ambientActiveCount = 0;
+  _ambientChatPaused.clear();
+  _scheduleAmbientChat();
   // Auto-off countdown
   if (exploreCountdownTimer) clearInterval(exploreCountdownTimer);
   exploreCountdownTimer = setInterval(() => {
@@ -1262,6 +1425,7 @@ function _startExplore() {
 
 function _stopExplore(auto = false) {
   exploreActive = false;
+  _stopAmbientChat();
   if (exploreCountdownTimer) { clearInterval(exploreCountdownTimer); exploreCountdownTimer = null; }
   const btn = document.getElementById('exploreBtn');
   btn.classList.remove('active');
@@ -1288,6 +1452,10 @@ async function onMembersAdjacent(labelA, labelB) {
   // Pause further encounters while this one runs
   exploreEncounterBusy = true;
   exploreEncounterCooldown = EXPLORE_ENCOUNTER_FRONTEND_COOLDOWN;
+  // Pause ambient chat for these two during LLM encounter
+  _ambientChatPaused.add(labelA);
+  _ambientChatPaused.add(labelB);
+  if (gameScene) { gameScene.clearAmbientBubble(labelA); gameScene.clearAmbientBubble(labelB); }
   // Start frontend cooldown tick
   if (exploreEncounterCooldownTimer) clearInterval(exploreEncounterCooldownTimer);
   exploreEncounterCooldownTimer = setInterval(() => {
@@ -1318,6 +1486,9 @@ async function onMembersAdjacent(labelA, labelB) {
     // network error — ignore
   } finally {
     exploreEncounterBusy = false;
+    // Resume ambient chat for these members after encounter ends
+    _ambientChatPaused.delete(labelA);
+    _ambientChatPaused.delete(labelB);
   }
 }
 
@@ -2712,9 +2883,10 @@ class ParliamentScene extends Phaser.Scene {
     }
     // Rebuild blocked with members at desk positions
     this._rebuildFurnitureBlocked();
-    // Clear all explore bubbles
+    // Clear all explore and ambient bubbles
     for (const label of this._memberLabels) {
       this._clearExploreBubble(label);
+      this.clearAmbientBubble(label);
     }
   }
 
@@ -2787,6 +2959,40 @@ class ParliamentScene extends Phaser.Scene {
     b.t.setPosition(mc.sprite.x + TW * SCALE / 2, mc.sprite.y - SCALE * 4);
     b.t.setOrigin(0.5, 1);
     b.t.setVisible(true);
+  }
+
+  // ── Ambient chat bubbles (smaller, dimmer, no stroke — visually distinct from LLM encounter) ──
+  _ensureAmbientBubble(label) {
+    const key = `ambient_${label}`;
+    if (!this._bubbles[key]) {
+      const fontSize = Math.max(6, Math.round(SCALE * 4));
+      const txt = this.add.text(0, 0, '', {
+        fontSize: `${fontSize}px`, color: '#c8b090',
+        fontFamily: 'monospace', resolution: 2,
+        alpha: 0.72,
+        wordWrap: { width: TW * SCALE * 7 },
+      }).setDepth(11).setVisible(false).setAlpha(0.72);
+      this._bubbles[key] = { t: txt };
+    }
+    return this._bubbles[key];
+  }
+
+  showAmbientBubble(label, text) {
+    const mc = this._chars[label];
+    if (!mc || !mc.sprite) return;
+    const b = this._ensureAmbientBubble(label);
+    const short = text.length > 30 ? text.slice(0, 30) + '…' : text;
+    b.t.setText(short);
+    // Position slightly higher and to the left vs encounter bubbles
+    b.t.setPosition(mc.sprite.x, mc.sprite.y - SCALE * 6);
+    b.t.setOrigin(0.5, 1);
+    b.t.setVisible(true);
+    b.t.setAlpha(0.72);
+  }
+
+  clearAmbientBubble(label) {
+    const b = this._bubbles[`ambient_${label}`];
+    if (b) { b.t.setVisible(false); b.t.setText(''); }
   }
 
   async showEncounterBubbles(exchange, labelA, labelB) {
