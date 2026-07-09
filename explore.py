@@ -1,5 +1,5 @@
 """
-Exploration mode logic for AI Parliament.
+Exploration mode logic for AI Discussion Room.
 Manages roaming-encounter throttle (deterministic layer) and LLM turn generation.
 
 Architecture principle: all throttle/counting is in this module (deterministic),

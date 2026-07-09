@@ -1,4 +1,4 @@
-# AI 眾議院 (AI Parliament)
+# AI 討論室 (AI Discussion Room)
 
 The only multi-LLM deliberation chamber that runs on your existing
 Claude / ChatGPT / Gemini **subscriptions** (zero API cost, bring-your-own-subscription)
@@ -53,7 +53,7 @@ GEMINI_CLI_TRUST_WORKSPACE=true gemini -p "hello" -m gemini-2.5-flash  # verify
 
 ```bash
 git clone <repo>
-cd ai-parliament
+cd ai-discussion-room
 cp config.example.json config.json   # optional: customise system prompts
 python3 server.py
 ```

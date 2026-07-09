@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI Parliament — HTTP Server
+AI Discussion Room — HTTP Server
 Python 3 stdlib only. Zero third-party dependencies.
 
 Usage:
@@ -580,7 +580,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     mock_tag = " [MOCK 模式]" if "--mock" in sys.argv else ""
-    print(f"AI 眾議院啟動{mock_tag} → http://localhost:{PORT}")
+    print(f"AI 討論室啟動{mock_tag} → http://localhost:{PORT}")
     print(f"PIN: {_PIN}  (存於 runs/pin.txt，或設 PARLIAMENT_PIN 環境變數)")
     print(f"使用 --port <n> 可自訂端口（測試用 8931）")
     if _CONFIG_PATH_OVERRIDE:

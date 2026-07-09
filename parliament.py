@@ -1,5 +1,5 @@
 """
-Core orchestration for AI Parliament.
+Core orchestration for AI Discussion Room.
 Manages sessions, member calls (parallel), chair summaries, and followups.
 All state lives in-memory (dict). Thread-safe via a caller-supplied lock.
 

@@ -1,5 +1,5 @@
 """
-Unit tests for AI Parliament.
+Unit tests for AI Discussion Room.
 No real CLI calls — all adapters mocked.
 Run: python3 -m pytest tests/ -v
   or: python3 -m unittest discover tests -v

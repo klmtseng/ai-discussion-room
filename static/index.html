@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AI 眾議院</title>
+<title>AI 討論室</title>
 <script src="/vendor/phaser.min.js"></script>
 <style>
 /* ── Reset & Base ── */
@@ -431,7 +431,7 @@ body:has(#sheet.open) #sheet-backdrop { opacity: 1; pointer-events: all; }
 
 <!-- PIN Gate -->
 <div id="pin-overlay">
-  <h1>⚖ AI 眾議院</h1>
+  <h1>💬 AI 討論室</h1>
   <p>請輸入 6 位 PIN 碼以進入議事廳<br>（伺服器啟動時印在終端 / runs/pin.txt）</p>
   <div id="pin-input-row">
     <input id="pinInput" type="password" maxlength="6" inputmode="numeric" placeholder="000000" autocomplete="off">
@@ -443,7 +443,7 @@ body:has(#sheet.open) #sheet-backdrop { opacity: 1; pointer-events: all; }
 <!-- HUD -->
 <div id="hud">
   <div id="hud-left">
-    <span style="font-size:0.75rem; font-weight:900; color:var(--accent); margin-right:4px;">⚖ 眾議院</span>
+    <span style="font-size:0.75rem; font-weight:900; color:var(--accent); margin-right:4px;">💬 AI 討論室</span>
     <!-- Member badges injected dynamically by renderHud() -->
   </div>
   <div id="hud-right">
@@ -565,13 +565,13 @@ body:has(#sheet.open) #sheet-backdrop { opacity: 1; pointer-events: all; }
 // ═══════════════════════════════════════════════════════════════
 const I18N = {
   zh: {
-    title: '⚖ AI 眾議院',
+    title: '💬 AI 討論室',
     pinPrompt: '請輸入 6 位 PIN 碼以進入議事廳',
     pinPromptSub: '（伺服器啟動時印在終端 / runs/pin.txt）',
     pinEnter: '進入',
     pinError: 'PIN 錯誤，請再試一次',
     pinConnErr: '連線失敗，請檢查伺服器是否啟動',
-    hudTitle: '⚖ 眾議院',
+    hudTitle: '💬 AI 討論室',
     exploreBtn: '探索',
     exploreBtnActive: '探索中',
     chairBadge: '主席 待機',
@@ -647,7 +647,7 @@ const I18N = {
     seatsReadme: 'README',
   },
   en: {
-    title: '⚖ AI Parliament',
+    title: '💬 AI Discussion Room',
     pinPrompt: 'Enter the 6-digit PIN to access the chamber',
     pinPromptSub: '(printed on terminal at server start / runs/pin.txt)',
     pinEnter: 'Enter',

@@ -1,5 +1,5 @@
 """
-Anonymization layer for AI Parliament.
+Anonymization layer for AI Discussion Room.
 
 Two jobs:
   1. create_shuffle(seed, member_ids) → random {label: member_id} mapping.

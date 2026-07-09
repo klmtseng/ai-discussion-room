@@ -1,5 +1,5 @@
 """
-CLI Adapters for AI Parliament.
+CLI Adapters for AI Discussion Room.
 To add a provider, add a new key to ADAPTERS and implement a _run_<name> function.
 
 Mock mode: set MOCK_MODE = True (via adapters.set_mock_mode(True)) or
