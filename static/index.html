@@ -219,6 +219,27 @@ html, body {
 #hud-left { display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; }
 #hud-right { display: flex; gap: 0.3rem; align-items: center; }
 
+/* ── Explore toggle button ── */
+#exploreBtn {
+  pointer-events: all;
+  background: var(--warm-dark);
+  border: 1.5px solid var(--warm-tan);
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 0.62rem; font-weight: 700;
+  padding: 2px 6px; cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+}
+#exploreBtn.active {
+  background: #0a3a3a; color: #5be0e0;
+  border-color: #5be0e0;
+}
+#explore-timer {
+  font-size: 0.58rem; color: var(--text-muted);
+  min-width: 2rem; text-align: right;
+}
+
 /* ── AI Legend ── */
 #hud-legend {
   position: fixed; top: 2.2rem; left: 0; right: 0;
@@ -272,12 +293,14 @@ html, body {
     <!-- Member badges injected dynamically by renderHud() -->
   </div>
   <div id="hud-right">
+    <span id="explore-timer"></span>
+    <button id="exploreBtn" onclick="toggleExplore()">探索</button>
     <span class="hud-badge pending" id="badgeChair">主席 待機</span>
   </div>
 </div>
 <!-- AI identity legend — shows after first session data arrives -->
 <div id="hud-legend"></div>
-<div id="hud-hint">點委員桌→深聊 ｜ 點講台→提問/總結 ｜ 點地板→移動</div>
+<div id="hud-hint">點委員桌→深聊 ｜ 點講台→提問/總結 ｜ 點地板→移動 ｜ 探索→AI自由漫遊</div>
 
 <!-- Game canvas -->
 <div id="game-wrap"></div>
@@ -414,6 +437,8 @@ async function submitQuestion() {
   setBadge('Chair','pending','主席 待機');
   document.getElementById('hud-left').innerHTML =
     '<span style="font-size:0.75rem; font-weight:900; color:var(--accent); margin-right:4px;">⚖ 眾議院</span>';
+  // Stop explore mode when debate begins
+  if (exploreActive) _stopExplore();
   if (gameScene) gameScene.resetMemberStates();
 
   const { status, data } = await apiPost('/api/parliament', { question: q });
@@ -658,6 +683,140 @@ function mdToHtml(md) {
 // Parse hex color string to Phaser integer
 function hexToInt(hex) {
   return parseInt(hex.replace('#',''), 16);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EXPLORATION MODE
+// ═══════════════════════════════════════════════════════════════
+let exploreActive = false;
+let exploreTimer = null;        // auto-off after 30 min
+let exploreCountdown = 0;       // seconds remaining for auto-off
+let exploreCountdownTimer = null;
+let exploreMoveTimer = null;    // AI roaming tick
+let exploreEncounterCooldown = 0; // frontend cooldown (seconds), refreshed from server 429
+let exploreEncounterCooldownTimer = null;
+let exploreEncounterBusy = false;
+const EXPLORE_AUTO_OFF_SECS = 30 * 60; // 30 minutes
+const EXPLORE_ENCOUNTER_FRONTEND_COOLDOWN = 30; // seconds between encounter attempts
+
+// Store last encounter exchange per pair for sheet display
+let _lastEncounterData = null; // {exchange, topic, labelA, labelB}
+
+function toggleExplore() {
+  if (exploreActive) {
+    _stopExplore();
+  } else {
+    _startExplore();
+  }
+}
+
+function _startExplore() {
+  if (!gameScene) return;
+  exploreActive = true;
+  exploreCountdown = EXPLORE_AUTO_OFF_SECS;
+  document.getElementById('exploreBtn').classList.add('active');
+  document.getElementById('exploreBtn').textContent = '探索中';
+  gameScene.startExplore();
+  // Auto-off countdown
+  if (exploreCountdownTimer) clearInterval(exploreCountdownTimer);
+  exploreCountdownTimer = setInterval(() => {
+    exploreCountdown--;
+    const m = Math.floor(exploreCountdown / 60);
+    const s = String(exploreCountdown % 60).padStart(2, '0');
+    const el = document.getElementById('explore-timer');
+    if (el) el.textContent = `${m}:${s}`;
+    if (exploreCountdown <= 0) {
+      _stopExplore(true);
+    }
+  }, 1000);
+}
+
+function _stopExplore(auto = false) {
+  exploreActive = false;
+  if (exploreCountdownTimer) { clearInterval(exploreCountdownTimer); exploreCountdownTimer = null; }
+  const btn = document.getElementById('exploreBtn');
+  btn.classList.remove('active');
+  btn.textContent = '探索';
+  const timerEl = document.getElementById('explore-timer');
+  if (timerEl) timerEl.textContent = '';
+  if (auto) {
+    // Soft notification
+    const hint = document.getElementById('hud-hint');
+    if (hint) {
+      const orig = hint.textContent;
+      hint.textContent = '探索模式已自動關閉（30 分鐘到期）';
+      hint.style.color = 'var(--accent)';
+      setTimeout(() => { hint.textContent = orig; hint.style.color = ''; }, 5000);
+    }
+  }
+  if (gameScene) gameScene.stopExplore();
+}
+
+// Called from game when two members are adjacent
+async function onMembersAdjacent(labelA, labelB) {
+  if (!exploreActive || exploreEncounterBusy) return;
+  if (exploreEncounterCooldown > 0) return;
+  // Pause further encounters while this one runs
+  exploreEncounterBusy = true;
+  exploreEncounterCooldown = EXPLORE_ENCOUNTER_FRONTEND_COOLDOWN;
+  // Start frontend cooldown tick
+  if (exploreEncounterCooldownTimer) clearInterval(exploreEncounterCooldownTimer);
+  exploreEncounterCooldownTimer = setInterval(() => {
+    exploreEncounterCooldown = Math.max(0, exploreEncounterCooldown - 1);
+    if (exploreEncounterCooldown <= 0) {
+      clearInterval(exploreEncounterCooldownTimer);
+      exploreEncounterCooldownTimer = null;
+    }
+  }, 1000);
+
+  try {
+    const { status, data } = await apiPost('/api/explore/encounter', { a: labelA, b: labelB });
+    if (status === 429) {
+      // Server-side cooldown — respect it
+      const wait = data.wait_seconds || 60;
+      exploreEncounterCooldown = Math.max(exploreEncounterCooldown, wait);
+      return;
+    }
+    if (status !== 200 || !data.exchange || data.exchange.length === 0) return;
+
+    _lastEncounterData = { exchange: data.exchange, topic: data.topic, labelA, labelB };
+
+    // Show speech bubbles sequentially
+    if (gameScene) {
+      await gameScene.showEncounterBubbles(data.exchange, labelA, labelB);
+    }
+  } catch(e) {
+    // network error — ignore
+  } finally {
+    exploreEncounterBusy = false;
+  }
+}
+
+// Open sheet showing last encounter full text (called on sprite tap during explore)
+function openEncounterSheet(label) {
+  if (_lastEncounterData &&
+      (_lastEncounterData.labelA === label || _lastEncounterData.labelB === label)) {
+    const { exchange, topic } = _lastEncounterData;
+    sheetMode = `encounter-${label}`;
+    const color = MEMBER_COLORS[label] || '#fff';
+    document.getElementById('sheet-title').textContent = `委員 ${label} — 休息時間對話`;
+    document.getElementById('sheet-title').style.color = color;
+    document.getElementById('sheet-input-row').style.display = 'none';
+    document.getElementById('sheet-qa-row').style.display = 'none';
+    const content = document.getElementById('sheet-content');
+    const topicHtml = `<div style="color:var(--text-muted);font-size:0.75rem;margin-bottom:8px">話題：${escHtml(topic)}</div>`;
+    const bubbles = exchange.map(turn => {
+      const cls = turn.label === label ? 'user' : 'ai';
+      const name = `委員 ${turn.label}`;
+      return `<div class="bubble ${cls}"><div class="bubble-label">${escHtml(name)}</div><p>${escHtml(turn.text)}</p></div>`;
+    }).join('');
+    content.innerHTML = topicHtml + bubbles;
+    content.scrollTop = 0;
+    document.getElementById('sheet').classList.add('open');
+  } else {
+    // Fall through to normal member sheet
+    openMemberSheet(label);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1253,14 +1412,14 @@ class ParliamentScene extends Phaser.Scene {
       if (col >= d.col && col < d.col + d.w && row >= d.row && row < d.row + d.h) {
         const dst = this._adjacentFree(col, row);
         if (dst) this._movePlayerTo(dst.col, dst.row);
-        this.time.delayedCall(350, () => openMemberSheet(label));
+        this.time.delayedCall(350, () => exploreActive ? openEncounterSheet(label) : openMemberSheet(label));
         return;
       }
       const mc = this._chars[label];
       if (mc && col === mc.col && row === mc.row) {
         const dst = this._adjacentFree(col, row);
         if (dst) this._movePlayerTo(dst.col, dst.row);
-        this.time.delayedCall(350, () => openMemberSheet(label));
+        this.time.delayedCall(350, () => exploreActive ? openEncounterSheet(label) : openMemberSheet(label));
         return;
       }
     }
@@ -1368,8 +1527,216 @@ class ParliamentScene extends Phaser.Scene {
     }
   }
 
+  // ── Exploration mode ─────────────────────────────────────────────
+  startExplore() {
+    this._exploreMode = true;
+    this._exploreMoveTimer = {};  // {label: ms_until_next_move}
+    this._exploreMoveTimer = {};
+    this._exploreRoaming = {};    // {label: {col, row}} current roam target
+    // Initialize each member with a random timer
+    for (const label of this._memberLabels) {
+      this._exploreMoveTimer[label] = Math.random() * 2000 + 500;
+      this._exploreRoaming[label] = null;
+    }
+    this._exploreAdjacencySet = new Set(); // pairs already triggered this tick
+  }
+
+  stopExplore() {
+    this._exploreMode = false;
+    // Return members to desk positions
+    for (const label of this._memberLabels) {
+      const dr = this._deskRects[label];
+      if (!dr) continue;
+      const col = dr.col + Math.floor(dr.w / 2);
+      const row = dr.row - 1;
+      const mc = this._chars[label];
+      if (!mc) continue;
+      // Move sprite directly back to desk
+      this._setCharPosition(label, col, row);
+    }
+    // Rebuild blocked with members at desk positions
+    this._rebuildFurnitureBlocked();
+    // Clear all explore bubbles
+    for (const label of this._memberLabels) {
+      this._clearExploreBubble(label);
+    }
+  }
+
+  _freeCellForExplore(exclude) {
+    // Pick a random floor cell not in blocked and not occupied by members
+    const occupied = new Set(exclude || []);
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const col = 2 + Math.floor(Math.random() * (COLS - 4));
+      const row = 2 + Math.floor(Math.random() * (ROWS - 4));
+      const key = `${col},${row}`;
+      if (!this._isBlocked(col, row) && !occupied.has(key)) {
+        return { col, row };
+      }
+    }
+    return null;
+  }
+
+  _setCharPosition(label, col, row) {
+    const mc = this._chars[label];
+    if (!mc || !mc.sprite) return;
+    mc.col = col;
+    mc.row = row;
+    mc.sprite.setPosition(this._px(col), this._py(row));
+    if (mc.lt) mc.lt.setPosition(this._px(col) + TW * SCALE / 2, this._py(row) - SCALE * 4);
+    if (mc.eg) mc.eg.setPosition(0, 0); // graphics are absolute-positioned, no action needed
+  }
+
+  _stepMemberToward(label, toCol, toRow) {
+    const mc = this._chars[label];
+    if (!mc) return false;
+    const next = this._stepToward(mc.col, mc.row, toCol, toRow);
+    if (next.col === mc.col && next.row === mc.row) return false; // stuck
+    this._setCharPosition(label, next.col, next.row);
+    return true;
+  }
+
+  _clearExploreBubble(label) {
+    const b = this._bubbles[`explore_${label}`];
+    if (b) { b.t.setVisible(false); b.t.setText(''); }
+  }
+
+  _ensureExploreBubble(label) {
+    const key = `explore_${label}`;
+    if (!this._bubbles[key]) {
+      const fontSize = Math.max(8, Math.round(SCALE * 5));
+      const t = this.add.text(0, 0, '', {
+        fontSize: `${fontSize}px`, color: '#ffe066',
+        fontFamily: 'monospace', resolution: 2,
+        stroke: '#1a1008', strokeThickness: 4,
+        wordWrap: { width: TW * SCALE * 8 },
+      }).setDepth(12).setVisible(false);
+      this._bubbles[key] = { t };
+    }
+    return this._bubbles[key];
+  }
+
+  _showExploreBubble(label, text) {
+    const mc = this._chars[label];
+    if (!mc || !mc.sprite) return;
+    const b = this._ensureExploreBubble(label);
+    const short = text.length > 40 ? text.slice(0, 40) + '…' : text;
+    b.t.setText(short);
+    b.t.setPosition(mc.sprite.x + TW * SCALE / 2, mc.sprite.y - SCALE * 4);
+    b.t.setOrigin(0.5, 1);
+    b.t.setVisible(true);
+  }
+
+  async showEncounterBubbles(exchange, labelA, labelB) {
+    // Pause roaming for these two members during dialogue
+    if (this._explorePaused === undefined) this._explorePaused = new Set();
+    this._explorePaused.add(labelA);
+    this._explorePaused.add(labelB);
+
+    for (const turn of exchange) {
+      this._showExploreBubble(turn.label, turn.text);
+      // Hide the other participant's bubble while this one speaks
+      const other = turn.label === labelA ? labelB : labelA;
+      this._clearExploreBubble(other);
+      await new Promise(r => setTimeout(r, 4000));
+    }
+    // Clear bubbles after dialogue ends
+    this._clearExploreBubble(labelA);
+    this._clearExploreBubble(labelB);
+    this._explorePaused.delete(labelA);
+    this._explorePaused.delete(labelB);
+
+    // Move them apart slightly
+    for (const label of [labelA, labelB]) {
+      const mc = this._chars[label];
+      if (!mc) continue;
+      const dr = this._deskRects[label];
+      if (dr) {
+        this._exploreRoaming[label] = { col: dr.col + Math.floor(dr.w / 2), row: dr.row - 1 };
+      }
+      this._exploreMoveTimer[label] = 1000 + Math.random() * 2000;
+    }
+  }
+
+  _updateExplore(delta) {
+    if (!this._exploreMode) return;
+    if (!this._explorePaused) this._explorePaused = new Set();
+
+    // Current member positions (for adjacency checks)
+    const positions = {};
+    for (const label of this._memberLabels) {
+      const mc = this._chars[label];
+      if (mc) positions[label] = { col: mc.col, row: mc.row };
+    }
+
+    // Check adjacency (Manhattan dist ≤ 1) for all pairs
+    const labels = this._memberLabels;
+    for (let i = 0; i < labels.length; i++) {
+      for (let j = i + 1; j < labels.length; j++) {
+        const la = labels[i], lb = labels[j];
+        const pa = positions[la], pb = positions[lb];
+        if (!pa || !pb) continue;
+        const dist = Math.abs(pa.col - pb.col) + Math.abs(pa.row - pb.row);
+        if (dist === 1) {
+          const pairKey = [la, lb].sort().join('-');
+          if (!this._exploreCooldownPairs) this._exploreCooldownPairs = {};
+          if (!this._exploreCooldownPairs[pairKey]) {
+            this._exploreCooldownPairs[pairKey] = true;
+            // Fire encounter (non-blocking)
+            onMembersAdjacent(la, lb).finally(() => {
+              // Allow re-trigger after ~15 seconds
+              setTimeout(() => {
+                if (this._exploreCooldownPairs) delete this._exploreCooldownPairs[pairKey];
+              }, 15000);
+            });
+          }
+        }
+      }
+    }
+
+    // Move each member toward their target
+    for (const label of this._memberLabels) {
+      if (this._explorePaused.has(label)) continue;
+
+      this._exploreMoveTimer[label] -= delta;
+      if (this._exploreMoveTimer[label] > 0) continue;
+
+      // Reset timer (1-3 seconds between steps)
+      this._exploreMoveTimer[label] = 1000 + Math.random() * 2000;
+
+      const mc = this._chars[label];
+      if (!mc) continue;
+
+      // Pick a new roam target if none or reached
+      const target = this._exploreRoaming[label];
+      if (!target || (mc.col === target.col && mc.row === target.row)) {
+        // Occasionally stop (20% chance) — idle
+        if (Math.random() < 0.2) {
+          this._exploreRoaming[label] = null;
+          continue;
+        }
+        // Other members' positions as occupied set
+        const occupied = labels
+          .filter(l => l !== label)
+          .map(l => { const p = positions[l]; return p ? `${p.col},${p.row}` : null; })
+          .filter(Boolean);
+        const cell = this._freeCellForExplore(occupied);
+        if (cell) this._exploreRoaming[label] = cell;
+        continue;
+      }
+
+      // Step toward target, respecting collision
+      // Temporarily remove this member from blocked for its own movement
+      const myKey = `${mc.col},${mc.row}`;
+      this._blocked.delete(myKey);
+      this._stepMemberToward(label, target.col, target.row);
+      // Re-add new position
+      this._blocked.add(`${mc.col},${mc.row}`);
+    }
+  }
+
   update(time, delta) {
     this._updatePlayer(delta);
+    this._updateExplore(delta);
   }
 }
 

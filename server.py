@@ -24,6 +24,7 @@ if "--mock" in sys.argv:
 
 import adapters  # noqa: E402  (mock env set above)
 import parliament  # noqa: E402
+import explore  # noqa: E402
 
 # Parse --port <n> from argv
 PORT = 8930
@@ -334,6 +335,35 @@ class _Handler(BaseHTTPRequestHandler):
             )
             t.start()
             self._send_json(202, {"status": "running"})
+            return
+
+        # POST /api/explore/encounter  — deterministic throttle + LLM dialogue
+        if parts == ["api", "explore", "encounter"]:
+            label_a = (data.get("a") or "").strip().upper()
+            label_b = (data.get("b") or "").strip().upper()
+            if not label_a or not label_b or label_a == label_b:
+                self._send_json(400, {"error": "a and b must be different non-empty member labels"})
+                return
+            config = _load_config()
+            exp_cfg = config.get("exploration", {})
+            if not exp_cfg.get("enabled", True):
+                self._send_json(403, {"error": "exploration mode disabled"})
+                return
+            # Find most recent question from active sessions (best-effort)
+            recent_q = None
+            with _sessions_lock:
+                done_sessions = [s for s in _sessions.values() if s.get("status") == "done"]
+                if done_sessions:
+                    latest = max(done_sessions, key=lambda s: s.get("created_at", 0))
+                    recent_q = latest.get("question")
+            ok, result = explore.run_encounter(label_a, label_b, config, recent_question=recent_q)
+            if not ok:
+                if result.get("throttled"):
+                    self._send_json(429, result)
+                else:
+                    self._send_json(500, result)
+                return
+            self._send_json(200, result)
             return
 
         self.send_error(404)
