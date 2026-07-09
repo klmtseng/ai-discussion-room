@@ -221,9 +221,9 @@ _SELF_ID_PATTERNS: List[re.Pattern] = [
 ]
 
 
-def filter_self_id(text: str, label: str) -> str:
-    """Replace self-identification phrases with [委員{label}]."""
-    replacement = f"[委員{label}]"
+def filter_self_id(text: str, label: str, lang: str = "zh") -> str:
+    """Replace self-identification phrases with [委員{label}] (zh) or [Member {label}] (en)."""
+    replacement = f"[Member {label}]" if lang == "en" else f"[委員{label}]"
     for pattern in _SELF_ID_PATTERNS:
         text = pattern.sub(replacement, text)
     return text
@@ -251,19 +251,21 @@ _BRAND_RE = re.compile(
 )
 
 
-def redact_model_names(text: str, extra_brands: Optional[List[str]] = None) -> str:
+def redact_model_names(text: str, extra_brands: Optional[List[str]] = None, lang: str = "zh") -> str:
     """
-    Replace every model/vendor brand token with [某AI]. Chair-bound text only.
+    Replace every model/vendor brand token with [某AI] (zh) or [an AI] (en).
+    Chair-bound text only.
 
     extra_brands: brand strings derived from the runtime config (each member's
     model_display and adapter id), so custom seats added via config are
     redacted too even if absent from the static list (VA hot review P2-1).
     """
-    text = _BRAND_RE.sub("[某AI]", text)
+    token = "[an AI]" if lang == "en" else "[某AI]"
+    text = _BRAND_RE.sub(token, text)
     for brand in extra_brands or []:
-        for token in re.split(r"[\s/_-]+", str(brand)):
-            if len(token) >= 3 and not token.isdigit():
-                text = re.sub(rf"(?i)\b{re.escape(token)}\b", "[某AI]", text)
+        for t in re.split(r"[\s/_-]+", str(brand)):
+            if len(t) >= 3 and not t.isdigit():
+                text = re.sub(rf"(?i)\b{re.escape(t)}\b", token, text)
     return text
 
 
@@ -276,6 +278,7 @@ def build_chair_prompt(
     followup_summaries: Optional[List[dict]] = None,
     labels: Optional[List[str]] = None,
     extra_brands: Optional[List[str]] = None,
+    lang: str = "zh",
 ) -> str:
     """
     Build the chair prompt. Member sections are pre-filtered by filter_self_id
@@ -293,7 +296,12 @@ def build_chair_prompt(
         labels = list(member_statuses.keys()) or list(anon_responses.keys()) or LABELS
 
     n = len(labels)
-    label_list = "/".join(f"委員{l}" for l in labels)
+    is_en = lang == "en"
+
+    if is_en:
+        label_list = "/".join(f"Member {l}" for l in labels)
+    else:
+        label_list = "/".join(f"委員{l}" for l in labels)
 
     parts: List[str] = []
 
@@ -301,56 +309,90 @@ def build_chair_prompt(
         parts.append(chair_system)
         parts.append("")
 
-    if is_resummary:
-        parts.append(f"本輪議題（再總結）：{question}")
-        parts.append("")
-        parts.append(f"以下為{n}位委員的初始回答及後續深聊補充，請重新總結：")
+    if is_en:
+        if is_resummary:
+            parts.append(f"Agenda item (re-summary): {question}")
+            parts.append("")
+            parts.append(f"Below are the {n} members' initial responses and follow-up exchanges. Please re-summarise:")
+        else:
+            parts.append(f"Agenda item: {question}")
+            parts.append("")
+            parts.append(f"Below are {n} anonymous members' responses. Please analyse:")
     else:
-        parts.append(f"本輪議題：{question}")
-        parts.append("")
-        parts.append(f"以下為{n}位匿名委員的回答，請進行分析：")
+        if is_resummary:
+            parts.append(f"本輪議題（再總結）：{question}")
+            parts.append("")
+            parts.append(f"以下為{n}位委員的初始回答及後續深聊補充，請重新總結：")
+        else:
+            parts.append(f"本輪議題：{question}")
+            parts.append("")
+            parts.append(f"以下為{n}位匿名委員的回答，請進行分析：")
 
     parts.append("")
 
     for label in labels:
         status = member_statuses.get(label, "error")
+        member_tag = f"[Member {label}]" if is_en else f"【委員{label}】"
+        absent_note = f"(absent this session)" if is_en else "（本席缺席）"
         if status == "done":
-            resp = redact_model_names(anon_responses.get(label, "(無內容)"), extra_brands)
-            parts.append(f"【委員{label}】")
+            resp = redact_model_names(anon_responses.get(label, "(no content)" if is_en else "(無內容)"), extra_brands, lang=lang)
+            parts.append(member_tag)
             parts.append(resp)
         else:
-            parts.append(f"【委員{label}】（本席缺席）")
+            parts.append(f"{member_tag}{absent_note}")
         parts.append("")
 
     if is_resummary and followup_summaries:
-        parts.append("── 深聊補充 ──")
+        parts.append("── Follow-up exchanges ──" if is_en else "── 深聊補充 ──")
         parts.append("")
         for fs in followup_summaries:
             label = fs.get("member", "?")
             q = fs.get("question", "")
             a = fs.get("response", "")
             if a:
-                # q is user-authored and may address a member by brand
-                # ("Claude 你覺得呢?") — that WOULD deanonymize, so redact both.
-                parts.append(f"委員{label} 被追問：{redact_model_names(q, extra_brands)}")
-                parts.append(f"委員{label} 補充：{redact_model_names(filter_self_id(a, label), extra_brands)}")
+                if is_en:
+                    parts.append(f"Member {label} was asked: {redact_model_names(q, extra_brands, lang=lang)}")
+                    parts.append(f"Member {label} replied: {redact_model_names(filter_self_id(a, label, lang=lang), extra_brands, lang=lang)}")
+                else:
+                    parts.append(f"委員{label} 被追問：{redact_model_names(q, extra_brands, lang=lang)}")
+                    parts.append(f"委員{label} 補充：{redact_model_names(filter_self_id(a, label, lang=lang), extra_brands, lang=lang)}")
                 parts.append("")
 
-    parts.append("請輸出以下四部分：")
-    parts.append("1. 共識點（各委員一致或高度相近的觀點）")
-    parts.append("2. 分歧點（觀點有明顯差異或矛盾之處）")
-    parts.append(
-        "3. 少數派報告（針對每個未收斂的面向：哪位委員持異議，及其最強論據，一句話；"
-        "若全體一致，此節寫「無——全體一致」）"
-    )
-    parts.append(
-        "4. 綜合結論（主席裁量的整合意見；若實質共識不存在，"
-        "允許明說「本題無共識」並止於少數派報告，不強行折衷）"
-    )
-    parts.append("")
-    parts.append(
-        "重要：回答中嚴禁出現 Claude、ChatGPT、Gemini、Bard、Codex、"
-        "Anthropic、OpenAI、Google 等品牌名稱；請一律稱「" + label_list + "」。"
-    )
+    if is_en:
+        parts.append("Please output the following four sections:")
+        parts.append("1. Consensus (points where all members substantially agree)")
+        parts.append("2. Divergences (points of clear disagreement or contradiction)")
+        parts.append(
+            "3. Minority Report (per unresolved aspect: which member dissents and their "
+            "strongest argument in one sentence; write \"None — unanimous\" if all agree)"
+        )
+        parts.append(
+            "4. Chair's Synthesis (the chair's integrative conclusion; if no substantial "
+            "consensus exists, you may declare \"no consensus\" and stop after the Minority Report "
+            "rather than forcing a compromise)"
+        )
+        parts.append("")
+        parts.append(
+            "Important: do NOT include any AI brand names (Claude, ChatGPT, Gemini, Bard, Codex, "
+            "Anthropic, OpenAI, Google, etc.) anywhere in your response; "
+            "refer to members only as " + label_list + "."
+        )
+    else:
+        parts.append("請輸出以下四部分：")
+        parts.append("1. 共識點（各委員一致或高度相近的觀點）")
+        parts.append("2. 分歧點（觀點有明顯差異或矛盾之處）")
+        parts.append(
+            "3. 少數派報告（針對每個未收斂的面向：哪位委員持異議，及其最強論據，一句話；"
+            "若全體一致，此節寫「無——全體一致」）"
+        )
+        parts.append(
+            "4. 綜合結論（主席裁量的整合意見；若實質共識不存在，"
+            "允許明說「本題無共識」並止於少數派報告，不強行折衷）"
+        )
+        parts.append("")
+        parts.append(
+            "重要：回答中嚴禁出現 Claude、ChatGPT、Gemini、Bard、Codex、"
+            "Anthropic、OpenAI、Google 等品牌名稱；請一律稱「" + label_list + "」。"
+        )
 
     return "\n".join(parts)

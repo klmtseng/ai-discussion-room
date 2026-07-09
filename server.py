@@ -274,8 +274,10 @@ class _Handler(BaseHTTPRequestHandler):
             if not question:
                 self._send_json(400, {"error": "question required"})
                 return
+            # lang: "zh" (default) or "en"; any other value normalised to "zh" in create_session
+            lang = str(data.get("lang", "zh")).strip().lower()
             config = _load_config()
-            session = parliament.create_session(question, config)
+            session = parliament.create_session(question, config, lang=lang)
             with _sessions_lock:
                 # Bounded store: evict oldest finished sessions beyond 50
                 # (memory otherwise grows without limit on a long-running server)

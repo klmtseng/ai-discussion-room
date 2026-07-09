@@ -100,6 +100,39 @@ def run_adapter(name: str, prompt: str, model_arg: str = None) -> Tuple[bool, st
 def _run_mock(name: str, prompt: str) -> Tuple[bool, str]:
     time.sleep(0.3)  # simulate latency
     short = prompt[:60].replace("\n", " ")
+
+    # Detect EN mode: prompt contains "Conclusion:" instruction
+    is_en = "Conclusion:" in prompt or "Conclusion: " in prompt
+
+    if is_en:
+        responses_en = {
+            "claude": (
+                f"[MOCK Claude] On \"{short}\": this is a thought-provoking question that merits multi-angle analysis.\n"
+                f"Conclusion: This issue requires multi-perspective evaluation and careful weighing of trade-offs."
+            ),
+            "codex": (
+                f"[MOCK Codex] Regarding \"{short}\": from a technical standpoint, several key points deserve attention.\n"
+                f"Conclusion: From a technical perspective, the key is finding concrete and actionable solutions."
+            ),
+            "gemini": (
+                f"[MOCK Gemini] On \"{short}\": based on available information, we can consider several dimensions.\n"
+                f"Conclusion: Multi-dimensional analysis reveals a clear logical path for addressing this question."
+            ),
+            "gemini-pro": (
+                f"[MOCK Gemini Pro] On \"{short}\": high-level analysis reveals noteworthy aspects.\n"
+                f"Conclusion: High-level analysis shows this issue requires a structural solution."
+            ),
+            "claude-extra": (
+                f"[MOCK Claude-2] On \"{short}\": from another angle, this problem has multiple layers.\n"
+                f"Conclusion: A supplementary view shows the problem is multi-layered; integration is essential."
+            ),
+        }
+        default_en = (
+            f"[MOCK {name}] Question received.\n"
+            f"Conclusion: Issue acknowledged; position to be further clarified."
+        )
+        return True, responses_en.get(name, default_en)
+
     responses = {
         "claude": (
             f"[MOCK Claude] 關於「{short}」：這是一個值得深思的問題。我認為需要從多個角度來分析。\n"
