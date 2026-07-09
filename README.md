@@ -9,6 +9,17 @@ synthesises consensus, disagreements, and a conclusion — with the members
 **structurally anonymised** to the chair (no brand token can reach it), so the
 synthesis can't play favourites. No API keys, no vendor lock-in. MIT.
 
+## Credits & Lineage
+
+This project was inspired by a Chinese-language social media post showcasing an
+"AI 眾議院" (AI House of Representatives) build — three AIs answering in parallel
+with an anonymised chair synthesis. The original post is no longer traceable;
+**if you are the original author, please open an issue and we will credit you
+properly.** The council-with-anonymised-chairman concept traces back to
+[karpathy/llm-council](https://github.com/karpathy/llm-council) (Nov 2025).
+This implementation (subscription-CLI BYOS, structural brand redaction, pixel
+chamber, exploration mode, minority report) was built independently.
+
 Related projects for comparison: [karpathy/llm-council](https://github.com/karpathy/llm-council)
 (OpenRouter API, tab UI), [the-ai-counsel](https://github.com/jacob-bd/the-ai-counsel)
 (API keys, debate rounds), [PolyGPT](https://github.com/ncvgl/polygpt) (web-login
