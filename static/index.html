@@ -84,6 +84,15 @@ html, body {
 #pin-err { color: var(--err); font-size: 0.8rem; min-height: 1em; }
 
 /* ── Bottom sheet ── */
+/* Dim backdrop, same visual language as #seats-panel (55% black fade).
+   Driven purely by CSS :has() so the three openSheet call sites need no JS. */
+#sheet-backdrop {
+  position: fixed; inset: 0; z-index: 490;
+  background: rgba(0,0,0,0.55);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s;
+}
+body:has(#sheet.open) #sheet-backdrop { opacity: 1; pointer-events: all; }
 #sheet {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 500;
   background: var(--warm-dark);
@@ -514,6 +523,7 @@ html, body {
 </div>
 
 <!-- Bottom sheet -->
+<div id="sheet-backdrop" onclick="closeSheet()"></div>
 <div id="sheet">
   <div id="sheet-header">
     <span id="sheet-title">委員 A</span>
