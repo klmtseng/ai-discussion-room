@@ -294,6 +294,7 @@ html, body {
   </div>
   <div id="hud-right">
     <span id="explore-timer"></span>
+    <button id="langToggleBtn" onclick="toggleLang()" style="pointer-events:all;background:var(--warm-dark);border:1.5px solid var(--warm-tan);border-radius:5px;color:var(--text-muted);font-size:0.62rem;font-weight:700;padding:2px 6px;cursor:pointer;white-space:nowrap;">EN</button>
     <button id="exploreBtn" onclick="toggleExplore()">探索</button>
     <span class="hud-badge pending" id="badgeChair">主席 待機</span>
   </div>
@@ -327,6 +328,167 @@ html, body {
 
 <script>
 // ═══════════════════════════════════════════════════════════════
+// I18N
+// ═══════════════════════════════════════════════════════════════
+const I18N = {
+  zh: {
+    title: '⚖ AI 眾議院',
+    pinPrompt: '請輸入 6 位 PIN 碼以進入議事廳',
+    pinPromptSub: '（伺服器啟動時印在終端 / runs/pin.txt）',
+    pinEnter: '進入',
+    pinError: 'PIN 錯誤，請再試一次',
+    pinConnErr: '連線失敗，請檢查伺服器是否啟動',
+    hudTitle: '⚖ 眾議院',
+    exploreBtn: '探索',
+    exploreBtnActive: '探索中',
+    chairBadge: '主席 待機',
+    chairDone: '主席 ✓',
+    chairRunning: '主席 …',
+    sheetTitleChair: '主席講台',
+    sheetClose: '✕',
+    submitBtn: '提交',
+    resummarizeBtn: '再總結',
+    followupBtn: '送',
+    fuPlaceholder: '追問…',
+    qPlaceholder: '輸入議題，Ctrl+Enter 送出…',
+    hintText: '點委員桌→深聊 ｜ 點講台→提問/總結 ｜ 點地板→移動 ｜ 探索→AI自由漫遊',
+    exploreAutoOff: '探索模式已自動關閉（30 分鐘到期）',
+    memberLabel: (l) => `委員 ${l}`,
+    memberLabelFull: (l, md) => md ? `委員 ${l}（${md}）` : `委員 ${l}`,
+    memberBadgeWaiting: (l) => `${l} 待機`,
+    memberBadgeDone: (l, md) => `${l}✓${md ? ' ('+md.split(' ')[0]+')' : ''}`,
+    memberBadgeError: (l) => `${l}✗`,
+    memberBadgeRunning: (l) => `${l}…`,
+    chairDecorate: (l, md) => `委員${l}（${md}）`,
+    conclusionTableTitle: '結論並列',
+    conclusionColMember: '委員',
+    conclusionColModel: '模型',
+    conclusionColStance: '一句話立場',
+    conclusionMissing: '(未依格式提供)',
+    chairSummaryLabel: '主席總結',
+    chairRunningText: '整理中…',
+    waitingText: '等待委員完成後自動總結…',
+    noSessionText: '點擊「提交議題」開始議事。',
+    noSessionMember: '尚無議事資料，請先提交議題。',
+    memberThinking: '…思考中',
+    memberAbsent: (err) => `本席缺席（${err || '錯誤'}）`,
+    memberWaiting: '等待議事開始…',
+    youLabel: '您',
+    encounterTitle: (l) => `委員 ${l} — 休息時間對話`,
+    encounterTopic: (t) => `話題：${t}`,
+    memberCharLabel: (l) => l,
+    playerLabel: '你',
+    langToggle: 'EN',
+  },
+  en: {
+    title: '⚖ AI Parliament',
+    pinPrompt: 'Enter the 6-digit PIN to access the chamber',
+    pinPromptSub: '(printed on terminal at server start / runs/pin.txt)',
+    pinEnter: 'Enter',
+    pinError: 'Wrong PIN — please try again',
+    pinConnErr: 'Connection failed — is the server running?',
+    hudTitle: '⚖ Parliament',
+    exploreBtn: 'Explore',
+    exploreBtnActive: 'Exploring',
+    chairBadge: 'Chair idle',
+    chairDone: 'Chair ✓',
+    chairRunning: 'Chair …',
+    sheetTitleChair: 'Chair Podium',
+    sheetClose: '✕',
+    submitBtn: 'Submit',
+    resummarizeBtn: 'Re-summarise',
+    followupBtn: 'Send',
+    fuPlaceholder: 'Follow-up question…',
+    qPlaceholder: 'Enter a question, Ctrl+Enter to submit…',
+    hintText: 'Tap desk → deep chat | Tap podium → question/summary | Tap floor → move | Explore → AI free roam',
+    exploreAutoOff: 'Explore mode closed automatically (30-minute limit reached)',
+    memberLabel: (l) => `Member ${l}`,
+    memberLabelFull: (l, md) => md ? `Member ${l} (${md})` : `Member ${l}`,
+    memberBadgeWaiting: (l) => `${l} idle`,
+    memberBadgeDone: (l, md) => `${l}✓${md ? ' ('+md.split(' ')[0]+')' : ''}`,
+    memberBadgeError: (l) => `${l}✗`,
+    memberBadgeRunning: (l) => `${l}…`,
+    chairDecorate: (l, md) => `Member ${l} (${md})`,
+    conclusionTableTitle: 'Conclusions',
+    conclusionColMember: 'Member',
+    conclusionColModel: 'Model',
+    conclusionColStance: 'One-line position',
+    conclusionMissing: '(not provided in required format)',
+    chairSummaryLabel: 'Chair Summary',
+    chairRunningText: 'Summarising…',
+    waitingText: 'Waiting for members to finish before auto-summary…',
+    noSessionText: 'Click "Submit" to start a debate.',
+    noSessionMember: 'No session data yet — submit a question first.',
+    memberThinking: '…thinking',
+    memberAbsent: (err) => `Absent (${err || 'error'})`,
+    memberWaiting: 'Waiting for debate to begin…',
+    youLabel: 'You',
+    encounterTitle: (l) => `Member ${l} — Recess conversation`,
+    encounterTopic: (t) => `Topic: ${t}`,
+    memberCharLabel: (l) => l,
+    playerLabel: 'You',
+    langToggle: '中',
+  },
+};
+
+// Detect preferred language from localStorage or browser
+function _detectLang() {
+  const saved = localStorage.getItem('parliament_lang');
+  if (saved === 'en' || saved === 'zh') return saved;
+  const bl = (navigator.language || navigator.userLanguage || 'zh').toLowerCase();
+  return bl.startsWith('zh') ? 'zh' : 'en';
+}
+
+let LANG = _detectLang();
+function t(key, ...args) {
+  const d = I18N[LANG];
+  const v = d[key];
+  if (typeof v === 'function') return v(...args);
+  return v !== undefined ? v : (I18N['zh'][key] || key);
+}
+
+function applyLang() {
+  // PIN overlay
+  document.querySelector('#pin-overlay h1').textContent = t('title');
+  const ps = document.querySelectorAll('#pin-overlay p');
+  if (ps[0]) ps[0].innerHTML = t('pinPrompt') + '<br>' + t('pinPromptSub');
+  document.getElementById('pinBtn').textContent = t('pinEnter');
+  // HUD
+  const hudTitleEl = document.querySelector('#hud-left span');
+  if (hudTitleEl) hudTitleEl.textContent = t('hudTitle');
+  const exploreEl = document.getElementById('exploreBtn');
+  if (exploreEl) exploreEl.textContent = exploreActive ? t('exploreBtnActive') : t('exploreBtn');
+  const badgeChair = document.getElementById('badgeChair');
+  if (badgeChair && badgeChair.className.includes('pending')) badgeChair.textContent = t('chairBadge');
+  // HUD hint
+  const hintEl = document.getElementById('hud-hint');
+  if (hintEl) hintEl.textContent = t('hintText');
+  // Sheet
+  document.getElementById('fuInput').placeholder = t('fuPlaceholder');
+  document.getElementById('fuBtn').textContent = t('followupBtn');
+  document.getElementById('qInput').placeholder = t('qPlaceholder');
+  document.getElementById('submitBtn').textContent = t('submitBtn');
+  document.getElementById('resummarizeBtn').textContent = t('resummarizeBtn');
+  document.getElementById('sheet-close').textContent = t('sheetClose');
+  // Lang toggle button
+  const ltBtn = document.getElementById('langToggleBtn');
+  if (ltBtn) ltBtn.textContent = t('langToggle');
+  // Refresh open sheet if any
+  if (sheetMode === 'chair') refreshChairSheet();
+  else if (sheetMode && sheetMode.startsWith('member-')) {
+    refreshMemberSheet(sheetMode.replace('member-', ''));
+  }
+  // Re-render HUD badges if session running
+  if (sessionData) { renderHud(sessionData); renderLegend(sessionData); }
+}
+
+function toggleLang() {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('parliament_lang', LANG);
+  applyLang();
+}
+
+// ═══════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════
 let PIN = localStorage.getItem('parliament_pin') || '';
@@ -350,7 +512,7 @@ function verifyPin() {
     headers: { 'X-Parliament-Pin': v }
   }).then(r => {
     if (r.status === 401) {
-      document.getElementById('pin-err').textContent = 'PIN 錯誤，請再試一次';
+      document.getElementById('pin-err').textContent = t('pinError');
     } else {
       PIN = v;
       localStorage.setItem('parliament_pin', PIN);
@@ -358,7 +520,7 @@ function verifyPin() {
       loadConfigMembers();
     }
   }).catch(() => {
-    document.getElementById('pin-err').textContent = '連線失敗，請檢查伺服器是否啟動';
+    document.getElementById('pin-err').textContent = t('pinConnErr');
   });
 }
 
@@ -387,6 +549,7 @@ async function loadConfigMembers() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  applyLang();
   if (PIN) {
     fetch('/api/parliament/___probe', { headers: { 'X-Parliament-Pin': PIN } })
       .then(r => {
@@ -434,15 +597,15 @@ async function submitQuestion() {
   document.getElementById('submitBtn').disabled = true;
   document.getElementById('resummarizeBtn').style.display = 'none';
   sessionId = null; sessionData = null; MEMBER_LABELS = [];
-  setBadge('Chair','pending','主席 待機');
+  setBadge('Chair','pending', t('chairBadge'));
   document.getElementById('hud-left').innerHTML =
-    '<span style="font-size:0.75rem; font-weight:900; color:var(--accent); margin-right:4px;">⚖ 眾議院</span>';
+    `<span style="font-size:0.75rem; font-weight:900; color:var(--accent); margin-right:4px;">${t('hudTitle')}</span>`;
   // Stop explore mode when debate begins
   if (exploreActive) _stopExplore();
   if (gameScene) gameScene.resetMemberStates();
 
-  const { status, data } = await apiPost('/api/parliament', { question: q });
-  if (!data.session_id) { alert('啟動失敗'); document.getElementById('submitBtn').disabled=false; return; }
+  const { status, data } = await apiPost('/api/parliament', { question: q, lang: LANG });
+  if (!data.session_id) { alert('Start failed'); document.getElementById('submitBtn').disabled=false; return; }
   sessionId = data.session_id;
   document.getElementById('qInput').value = '';
   startPolling();
@@ -506,12 +669,12 @@ function setBadge(who, cls, text) {
 function renderHudStructure(d) {
   // Build initial HUD badges for all members
   const left = document.getElementById('hud-left');
-  left.innerHTML = '<span style="font-size:0.75rem; font-weight:900; color:var(--accent); margin-right:4px;">⚖ 眾議院</span>';
+  left.innerHTML = `<span style="font-size:0.75rem; font-weight:900; color:var(--accent); margin-right:4px;">${t('hudTitle')}</span>`;
   for (const label of MEMBER_LABELS) {
     const span = document.createElement('span');
     span.id = `badge${label}`;
     span.className = 'hud-badge pending';
-    span.textContent = `${label} 待機`;
+    span.textContent = t('memberBadgeWaiting', label);
     left.appendChild(span);
   }
 }
@@ -520,14 +683,14 @@ function renderHud(d) {
   for (const label of MEMBER_LABELS) {
     const m = d.members[label];
     if (!m) continue;
-    const md = m.model_display ? ` (${m.model_display.split(' ')[0]})` : '';
-    if (m.status === 'done')       setBadge(label, 'done',    `${label}✓${md}`);
-    else if (m.status === 'error') setBadge(label, 'error',   `${label}✗`);
-    else                            setBadge(label, 'running', `${label}…`);
+    const md = m.model_display || '';
+    if (m.status === 'done')       setBadge(label, 'done',    t('memberBadgeDone', label, md));
+    else if (m.status === 'error') setBadge(label, 'error',   t('memberBadgeError', label));
+    else                            setBadge(label, 'running', t('memberBadgeRunning', label));
   }
-  if (d.chair_status === 'done')         setBadge('Chair','done',   '主席 ✓');
-  else if (d.chair_status === 'running') setBadge('Chair','running','主席 …');
-  else                                   setBadge('Chair','pending','主席 待機');
+  if (d.chair_status === 'done')         setBadge('Chair','done',   t('chairDone'));
+  else if (d.chair_status === 'running') setBadge('Chair','running',t('chairRunning'));
+  else                                   setBadge('Chair','pending',t('chairBadge'));
 }
 
 function renderLegend(d) {
@@ -546,9 +709,9 @@ function renderLegend(d) {
 // BOTTOM SHEET
 // ═══════════════════════════════════════════════════════════════
 function _memberDisplayName(label) {
-  if (!sessionData || !sessionData.members || !sessionData.members[label]) return `委員 ${label}`;
+  if (!sessionData || !sessionData.members || !sessionData.members[label]) return t('memberLabel', label);
   const md = sessionData.members[label].model_display;
-  return md ? `委員 ${label}（${md}）` : `委員 ${label}`;
+  return t('memberLabelFull', label, md);
 }
 
 function openMemberSheet(label) {
@@ -564,7 +727,7 @@ function openMemberSheet(label) {
 
 function openChairSheet() {
   sheetMode = 'chair';
-  document.getElementById('sheet-title').textContent = '主席講台';
+  document.getElementById('sheet-title').textContent = t('sheetTitleChair');
   document.getElementById('sheet-title').style.color = '#ffe066';
   document.getElementById('sheet-input-row').style.display = 'none';
   document.getElementById('sheet-qa-row').style.display = 'block';
@@ -583,7 +746,7 @@ function closeSheet() {
 function refreshMemberSheet(label) {
   const content = document.getElementById('sheet-content');
   if (!sessionData) {
-    content.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">尚無議事資料，請先提交議題。</div>';
+    content.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">${t('noSessionMember')}</div>`;
     return;
   }
   const m = sessionData.members[label];
@@ -594,11 +757,11 @@ function refreshMemberSheet(label) {
     msgs.push({ role:'user', text: sessionData.question });
     msgs.push({ role:'ai', text: m.response });
   } else if (m && m.status === 'running') {
-    msgs.push({ role:'ai', text: '…思考中', thinking: true });
+    msgs.push({ role:'ai', text: t('memberThinking'), thinking: true });
   } else if (m && m.status === 'error') {
-    msgs.push({ role:'ai', text: `本席缺席（${m.error || '錯誤'}）`, error: true });
+    msgs.push({ role:'ai', text: t('memberAbsent', m.error), error: true });
   } else {
-    msgs.push({ role:'ai', text: '等待議事開始…', thinking: true });
+    msgs.push({ role:'ai', text: t('memberWaiting'), thinking: true });
   }
 
   for (const f of (sessionData.followups || [])) {
@@ -610,7 +773,7 @@ function refreshMemberSheet(label) {
 
   content.innerHTML = msgs.map(msg => {
     const cls = msg.role === 'user' ? 'user' : 'ai';
-    const lbl = msg.role === 'user' ? '您' : memberName;
+    const lbl = msg.role === 'user' ? t('youLabel') : memberName;
     const body = msg.thinking
       ? `<em class="bubble thinking">${escHtml(msg.text)}</em>`
       : mdToHtml(msg.text);
@@ -634,20 +797,21 @@ function _buildConclusionsTable(members, labels) {
     const modelName = m.model_display || label;
     const conclusionText = (m.conclusion != null)
       ? escHtml(m.conclusion)
-      : '<em style="color:var(--text-muted)">(未依格式提供)</em>';
+      : `<em style="color:var(--text-muted)">${t('conclusionMissing')}</em>`;
+    const memberCellLabel = LANG === 'en' ? `Member ${escHtml(label)}` : `委員${escHtml(label)}`;
     rows += `<tr>
-      <td style="white-space:nowrap;padding:3px 8px 3px 4px;color:${color};font-weight:700;font-size:0.8rem">委員${escHtml(label)}</td>
+      <td style="white-space:nowrap;padding:3px 8px 3px 4px;color:${color};font-weight:700;font-size:0.8rem">${memberCellLabel}</td>
       <td style="padding:3px 4px;font-size:0.75rem;color:var(--text-muted);white-space:nowrap">${escHtml(modelName)}</td>
       <td style="padding:3px 4px;font-size:0.82rem;line-height:1.5">${conclusionText}</td>
     </tr>`;
   }
   return `<div style="margin-bottom:0.6rem">
-    <div style="font-size:0.72rem;font-weight:700;color:var(--accent);margin-bottom:4px;letter-spacing:0.04em">結論並列</div>
+    <div style="font-size:0.72rem;font-weight:700;color:var(--accent);margin-bottom:4px;letter-spacing:0.04em">${t('conclusionTableTitle')}</div>
     <table style="width:100%;border-collapse:collapse;background:#1e1410;border-radius:6px;overflow:hidden">
       <thead><tr style="background:#2a1f14">
-        <th style="padding:4px 8px 4px 4px;text-align:left;font-size:0.7rem;color:var(--text-muted);font-weight:600">委員</th>
-        <th style="padding:4px;text-align:left;font-size:0.7rem;color:var(--text-muted);font-weight:600">模型</th>
-        <th style="padding:4px;text-align:left;font-size:0.7rem;color:var(--text-muted);font-weight:600">一句話立場</th>
+        <th style="padding:4px 8px 4px 4px;text-align:left;font-size:0.7rem;color:var(--text-muted);font-weight:600">${t('conclusionColMember')}</th>
+        <th style="padding:4px;text-align:left;font-size:0.7rem;color:var(--text-muted);font-weight:600">${t('conclusionColModel')}</th>
+        <th style="padding:4px;text-align:left;font-size:0.7rem;color:var(--text-muted);font-weight:600">${t('conclusionColStance')}</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -657,7 +821,7 @@ function _buildConclusionsTable(members, labels) {
 function refreshChairSheet() {
   const content = document.getElementById('sheet-content');
   if (!sessionData) {
-    content.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">點擊「提交議題」開始議事。</div>';
+    content.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">${t('noSessionText')}</div>`;
     return;
   }
   let html = '';
@@ -667,21 +831,24 @@ function refreshChairSheet() {
     html += _buildConclusionsTable(sessionData.members, MEMBER_LABELS);
   }
   if (sessionData.chair_status === 'done' && sessionData.chair_summary) {
-    // Upgrade 2: decorate 委員X → 委員X(ModelName) in chair summary display only (not in raw data)
+    // Decorate member label → member label(ModelName) in display only
     let summary = sessionData.chair_summary;
     if (sessionData.members) {
       for (const [label, m] of Object.entries(sessionData.members)) {
         if (m.model_display) {
-          const re = new RegExp(`委員${label}(?!（)`, 'g');
-          summary = summary.replace(re, `委員${label}（${m.model_display}）`);
+          // Decorate both zh and en patterns to handle cross-lang scenarios
+          const reZh = new RegExp(`委員${label}(?!（)`, 'g');
+          summary = summary.replace(reZh, t('chairDecorate', label, m.model_display));
+          const reEn = new RegExp(`Member ${label}(?! \\()`, 'g');
+          summary = summary.replace(reEn, t('chairDecorate', label, m.model_display));
         }
       }
     }
-    html += `<div class="bubble ai"><div class="bubble-label">主席總結</div>${mdToHtml(summary)}</div>`;
+    html += `<div class="bubble ai"><div class="bubble-label">${t('chairSummaryLabel')}</div>${mdToHtml(summary)}</div>`;
   } else if (sessionData.chair_status === 'running') {
-    html += `<div class="bubble ai thinking"><div class="bubble-label">主席</div>整理中…</div>`;
+    html += `<div class="bubble ai thinking"><div class="bubble-label">${t('sheetTitleChair')}</div>${t('chairRunningText')}</div>`;
   } else {
-    html += `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">等待委員完成後自動總結…</div>`;
+    html += `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">${t('waitingText')}</div>`;
   }
   content.innerHTML = html;
   content.scrollTop = content.scrollHeight;
@@ -752,7 +919,7 @@ function _startExplore() {
   exploreActive = true;
   exploreCountdown = EXPLORE_AUTO_OFF_SECS;
   document.getElementById('exploreBtn').classList.add('active');
-  document.getElementById('exploreBtn').textContent = '探索中';
+  document.getElementById('exploreBtn').textContent = t('exploreBtnActive');
   gameScene.startExplore();
   // Auto-off countdown
   if (exploreCountdownTimer) clearInterval(exploreCountdownTimer);
@@ -773,7 +940,7 @@ function _stopExplore(auto = false) {
   if (exploreCountdownTimer) { clearInterval(exploreCountdownTimer); exploreCountdownTimer = null; }
   const btn = document.getElementById('exploreBtn');
   btn.classList.remove('active');
-  btn.textContent = '探索';
+  btn.textContent = t('exploreBtn');
   const timerEl = document.getElementById('explore-timer');
   if (timerEl) timerEl.textContent = '';
   if (auto) {
@@ -781,9 +948,9 @@ function _stopExplore(auto = false) {
     const hint = document.getElementById('hud-hint');
     if (hint) {
       const orig = hint.textContent;
-      hint.textContent = '探索模式已自動關閉（30 分鐘到期）';
+      hint.textContent = t('exploreAutoOff');
       hint.style.color = 'var(--accent)';
-      setTimeout(() => { hint.textContent = orig; hint.style.color = ''; }, 5000);
+      setTimeout(() => { hint.textContent = t('hintText'); hint.style.color = ''; }, 5000);
     }
   }
   if (gameScene) gameScene.stopExplore();
@@ -836,15 +1003,15 @@ function openEncounterSheet(label) {
     const { exchange, topic } = _lastEncounterData;
     sheetMode = `encounter-${label}`;
     const color = MEMBER_COLORS[label] || '#fff';
-    document.getElementById('sheet-title').textContent = `委員 ${label} — 休息時間對話`;
+    document.getElementById('sheet-title').textContent = t('encounterTitle', label);
     document.getElementById('sheet-title').style.color = color;
     document.getElementById('sheet-input-row').style.display = 'none';
     document.getElementById('sheet-qa-row').style.display = 'none';
     const content = document.getElementById('sheet-content');
-    const topicHtml = `<div style="color:var(--text-muted);font-size:0.75rem;margin-bottom:8px">話題：${escHtml(topic)}</div>`;
+    const topicHtml = `<div style="color:var(--text-muted);font-size:0.75rem;margin-bottom:8px">${t('encounterTopic', topic)}</div>`;
     const bubbles = exchange.map(turn => {
       const cls = turn.label === label ? 'user' : 'ai';
-      const name = `委員 ${turn.label}`;
+      const name = t('memberLabel', turn.label);
       return `<div class="bubble ${cls}"><div class="bubble-label">${escHtml(name)}</div><p>${escHtml(turn.text)}</p></div>`;
     }).join('');
     content.innerHTML = topicHtml + bubbles;
