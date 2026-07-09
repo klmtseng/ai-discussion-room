@@ -1158,7 +1158,9 @@ class ParliamentScene extends Phaser.Scene {
       const md = this._memberData[label];
       const intColor = hexToInt(md.color);
       const frame = charFrames[i % charFrames.length];
-      const shortName = md.model_display.split(' ')[0];
+      // Keep two words so sibling models stay distinguishable
+      // ("Gemini Pro" vs "Gemini 2.5 Flash" → "Gemini Pro" / "Gemini 2.5")
+      const shortName = md.model_display.split(' ').slice(0, 2).join(' ');
       this._chars[label] = this._createSpriteChar(col, row, frame, intColor, shortName, md.emblem);
     }
 
