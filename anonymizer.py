@@ -42,19 +42,26 @@ ADAPTER_NAMES = ["claude", "codex", "gemini"]
 LABELS = ["A", "B", "C"]
 
 
-def create_shuffle(seed: int, adapter_names: Optional[List[str]] = None) -> Dict[str, str]:
+def create_shuffle(seed: int, member_ids: Optional[List[str]] = None) -> Dict[str, str]:
     """
-    Returns {label: adapter_name} mapping for one session round.
+    Returns {label: member_id} mapping for one session round.
     Same seed always produces the same mapping (deterministic for debug).
-    adapter_names defaults to the legacy 3-adapter list for backward compat.
+
+    member_ids: list of member id strings (from config["members"][i]["id"]).
+      Defaults to the legacy ADAPTER_NAMES list for backward compat
+      (legacy configs have id==adapter for the three built-in seats).
+
+    NOTE: values are now member IDs, not adapter names.  Two seats that share
+    the same adapter (e.g. two Gemini seats) will have distinct IDs, so label→
+    member_id is always 1-to-1 and unambiguous.
     """
-    if adapter_names is None:
-        adapter_names = ADAPTER_NAMES[:]
-    labels = _make_labels(len(adapter_names))
+    if member_ids is None:
+        member_ids = ADAPTER_NAMES[:]  # legacy: id == adapter for default seats
+    labels = _make_labels(len(member_ids))
     rng = random.Random(seed)
-    adapters_copy = adapter_names[:]
-    rng.shuffle(adapters_copy)
-    return dict(zip(labels, adapters_copy))
+    ids_copy = member_ids[:]
+    rng.shuffle(ids_copy)
+    return dict(zip(labels, ids_copy))
 
 
 # ---------------------------------------------------------------------------
@@ -91,28 +98,29 @@ def public_model_display_map(config: dict) -> Dict[str, str]:
 
 def resolve_label_display(shuffle_map: Dict[str, str], config: dict) -> Dict[str, str]:
     """
-    Given shuffle_map = {label: adapter_id} and config, return {label: model_display}.
+    Given shuffle_map = {label: member_id} and config, return {label: model_display}.
     This is the post-shuffle mapping: label A might map to Claude in one session,
-    ChatGPT in another. model_display follows the actual adapter, not config order.
+    ChatGPT in another. model_display follows the actual member id, not config order.
     """
     members = members_from_config(config)
-    adapter_to_display = {m["adapter"]: m.get("model_display", m["adapter"]) for m in members}
-    return {label: adapter_to_display.get(adapter, adapter) for label, adapter in shuffle_map.items()}
+    id_to_display = {m["id"]: m.get("model_display", m["adapter"]) for m in members}
+    return {label: id_to_display.get(member_id, member_id) for label, member_id in shuffle_map.items()}
 
 
 def resolve_label_meta(shuffle_map: Dict[str, str], config: dict) -> Dict[str, dict]:
     """
     Return {label: {model_display, color, emblem}} following shuffle.
+    shuffle_map values are member IDs (not adapter names).
     Safe to send to public view; NEVER to chair.
     """
     members = members_from_config(config)
-    adapter_meta = {m["adapter"]: {
+    id_meta = {m["id"]: {
         "model_display": m.get("model_display", m["adapter"]),
         "color": m.get("color", "#888888"),
         "emblem": m.get("emblem", "dot"),
     } for m in members}
-    return {label: adapter_meta.get(adapter, {"model_display": adapter, "color": "#888888", "emblem": "dot"})
-            for label, adapter in shuffle_map.items()}
+    return {label: id_meta.get(member_id, {"model_display": member_id, "color": "#888888", "emblem": "dot"})
+            for label, member_id in shuffle_map.items()}
 
 
 # ---------------------------------------------------------------------------

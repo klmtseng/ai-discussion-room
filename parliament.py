@@ -27,9 +27,12 @@ def create_session(question: str, config: dict, lang: str = "zh") -> dict:
     if lang not in ("zh", "en"):
         lang = "zh"
     members_cfg = anonymizer.members_from_config(config)
-    adapter_names = [m["adapter"] for m in members_cfg]
+    # Build id→member dict for O(1) lookups — avoids adapter-keyed collisions when
+    # two seats share the same adapter (e.g. Gemini Flash + Gemini Pro).
+    id_to_member = {m["id"]: m for m in members_cfg}
+    member_ids = [m["id"] for m in members_cfg]
     seed = random.randint(0, 2**31 - 1)
-    shuffle_map = anonymizer.create_shuffle(seed, adapter_names)  # {label → adapter_name}
+    shuffle_map = anonymizer.create_shuffle(seed, member_ids)  # {label → member_id}
     label_meta = anonymizer.resolve_label_meta(shuffle_map, config)  # {label → {model_display, color, emblem}}
     return {
         "id": str(uuid.uuid4())[:8],
@@ -38,7 +41,7 @@ def create_session(question: str, config: dict, lang: str = "zh") -> dict:
         "status": "running",
         "created_at": time.time(),
         "_debug_seed": seed,
-        "_debug_shuffle": shuffle_map,   # label → adapter (debug only, never sent to chair)
+        "_debug_shuffle": shuffle_map,   # label → member_id (debug only, never sent to chair)
         "_label_meta": label_meta,       # label → {model_display, color, emblem} (public view only)
         "members": {
             label: {
@@ -46,14 +49,12 @@ def create_session(question: str, config: dict, lang: str = "zh") -> dict:
                 "response": None,
                 "error": None,
                 "conclusion": None,       # deterministic extraction; None until done
-                "_adapter": adapter_name,
-                "_model_arg": next(
-                    (m.get("model_arg") for m in members_cfg if m["adapter"] == adapter_name),
-                    None,
-                ),
+                "_member_id": member_id,
+                "_adapter": id_to_member[member_id]["adapter"],
+                "_model_arg": id_to_member[member_id].get("model_arg"),
                 "conversation": [],       # [{role, content}, …]
             }
-            for label, adapter_name in shuffle_map.items()
+            for label, member_id in shuffle_map.items()
         },
         "chair_status": "pending",
         "chair_summary": None,
@@ -129,17 +130,20 @@ def run_session(session: dict, lock: threading.Lock) -> None:
 
 
 def _run_member(session: dict, label: str, lock: threading.Lock) -> None:
-    adapter_name = session["members"][label]["_adapter"]
+    member_slot = session["members"][label]
+    adapter_name = member_slot["_adapter"]
+    member_id = member_slot["_member_id"]
     config = session["_config"]
     question = session["question"]
     lang = session.get("lang", "zh")
     is_en = lang == "en"
     member_system = config.get("member_system_prompt", "")
 
-    # Per-member system prompt override from config
+    # Per-member system prompt override — look up by member id (not adapter) so
+    # two seats sharing the same adapter get their own overrides independently.
     members_cfg = anonymizer.members_from_config(config)
     member_override = next(
-        (m.get("system_prompt", "") for m in members_cfg if m["adapter"] == adapter_name),
+        (m.get("system_prompt", "") for m in members_cfg if m["id"] == member_id),
         ""
     )
     effective_system = member_override or member_system
@@ -314,18 +318,20 @@ def run_followup(
         if followup is None:
             return
         member = followup["member"]
-        adapter_name = session["members"][member]["_adapter"]
+        member_slot = session["members"][member]
+        adapter_name = member_slot["_adapter"]
+        member_id = member_slot["_member_id"]
         fq = followup["question"]
-        conv = list(session["members"][member]["conversation"])
+        conv = list(member_slot["conversation"])
         lang = session.get("lang", "zh")
 
     is_en = lang == "en"
     member_system = config.get("member_system_prompt", "")
 
-    # Per-member system prompt override
+    # Per-member system prompt override — look up by member id (not adapter).
     members_cfg = anonymizer.members_from_config(config)
     member_override = next(
-        (m.get("system_prompt", "") for m in members_cfg if m["adapter"] == adapter_name),
+        (m.get("system_prompt", "") for m in members_cfg if m["id"] == member_id),
         ""
     )
     effective_system = member_override or member_system
