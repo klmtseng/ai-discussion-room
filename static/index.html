@@ -482,15 +482,31 @@ body:has(#sheet.open) #sheet-backdrop { opacity: 1; pointer-events: all; }
         </div>
         <div>
           <label id="seat-form-adapter-lbl">Adapter</label>
-          <select id="seat-form-adapter">
+          <select id="seat-form-adapter" onchange="onAdapterChange()">
             <option value="claude">claude</option>
             <option value="codex">codex</option>
             <option value="gemini">gemini</option>
+            <option value="openai-compat">OpenAI-compatible API</option>
           </select>
         </div>
         <div>
           <label id="seat-form-modelarg-lbl">Model Arg（選填，e.g. gemini-2.5-flash）</label>
           <input id="seat-form-modelarg" type="text" placeholder="留空=使用預設">
+        </div>
+        <!-- openai-compat extra fields (shown/hidden by onAdapterChange) -->
+        <div id="seat-compat-fields" style="display:none">
+          <div>
+            <label id="seat-form-baseurl-lbl">Base URL</label>
+            <input id="seat-form-baseurl" type="text" maxlength="256" placeholder="http://localhost:11434/v1">
+          </div>
+          <div>
+            <label id="seat-form-model-lbl">Model</label>
+            <input id="seat-form-model" type="text" maxlength="64" placeholder="llama3">
+          </div>
+          <div>
+            <label id="seat-form-apikeyenv-lbl">API Key Env（選填，環境變數名，留空=不送 Authorization）</label>
+            <input id="seat-form-apikeyenv" type="text" maxlength="64" placeholder="DEEPSEEK_API_KEY">
+          </div>
         </div>
         <div>
           <label id="seat-form-color-lbl">顏色</label>
@@ -513,7 +529,7 @@ body:has(#sheet.open) #sheet-backdrop { opacity: 1; pointer-events: all; }
     <div id="seats-err"></div>
     <div id="seats-ok"></div>
     <div id="seats-provider-note">
-      <span id="seats-provider-note-text">接入全新供應商（Ollama 等）需新增 adapter，見 </span><a href="#" id="seats-readme-link" onclick="return false">README</a>
+      <span id="seats-provider-note-text">API 席位費用依供應商計費，使用者自負。</span><a href="#" id="seats-readme-link" onclick="return false">README</a>
     </div>
     <div id="seats-footer">
       <button id="seats-add-btn" onclick="seatAddNew()">＋ 新增席位</button>
@@ -601,8 +617,6 @@ const I18N = {
     seatsClose: '✕',
     seatsAddBtn: '＋ 新增席位',
     seatsSaveBtn: '儲存',
-    seatsProviderNote: '接入全新供應商（Ollama 等）需新增 adapter，見 ',
-    seatsReadme: 'README',
     seatsSaveOk: '已儲存，房間重建中…',
     seatsSaveFail: '儲存失敗：',
     seatsValidErr: '格式錯誤：',
@@ -623,6 +637,14 @@ const I18N = {
     seatFormOk: '確認',
     seatFormCancel: '取消',
     seatFormModelArgPh: '留空=使用預設',
+    seatFormBaseUrlLbl: 'Base URL',
+    seatFormBaseUrlPh: 'http://localhost:11434/v1',
+    seatFormModelLbl: 'Model',
+    seatFormModelPh: 'llama3',
+    seatFormApiKeyEnvLbl: 'API Key Env（選填，環境變數名，留空=不送 Authorization）',
+    seatFormApiKeyEnvPh: 'DEEPSEEK_API_KEY',
+    seatsProviderNote: 'API 席位費用依供應商計費，使用者自負。',
+    seatsReadme: 'README',
   },
   en: {
     title: '⚖ AI Parliament',
@@ -677,8 +699,6 @@ const I18N = {
     seatsClose: '✕',
     seatsAddBtn: '＋ Add Seat',
     seatsSaveBtn: 'Save',
-    seatsProviderNote: 'Adding a new provider (Ollama etc.) requires a new adapter — see ',
-    seatsReadme: 'README',
     seatsSaveOk: 'Saved — rebuilding room…',
     seatsSaveFail: 'Save failed: ',
     seatsValidErr: 'Validation error: ',
@@ -699,6 +719,14 @@ const I18N = {
     seatFormOk: 'OK',
     seatFormCancel: 'Cancel',
     seatFormModelArgPh: 'Leave blank for default',
+    seatFormBaseUrlLbl: 'Base URL',
+    seatFormBaseUrlPh: 'http://localhost:11434/v1',
+    seatFormModelLbl: 'Model',
+    seatFormModelPh: 'llama3',
+    seatFormApiKeyEnvLbl: 'API Key Env (optional — env var name; leave blank for no Authorization header)',
+    seatFormApiKeyEnvPh: 'DEEPSEEK_API_KEY',
+    seatsProviderNote: 'API seat costs are billed by the provider and are your responsibility. ',
+    seatsReadme: 'README',
   },
 };
 
@@ -767,9 +795,15 @@ function applyLang() {
   fl('seat-form-color-lbl', 'seatFormColorLbl');
   fl('seat-form-emblem-lbl', 'seatFormEmblemLbl');
   fl('seat-form-sp-lbl', 'seatFormSpLbl');
+  fl('seat-form-baseurl-lbl', 'seatFormBaseUrlLbl');
+  fl('seat-form-model-lbl', 'seatFormModelLbl');
+  fl('seat-form-apikeyenv-lbl', 'seatFormApiKeyEnvLbl');
   const fok = document.getElementById('seat-form-ok'); if (fok) fok.textContent = t('seatFormOk');
   const fcan = document.getElementById('seat-form-cancel'); if (fcan) fcan.textContent = t('seatFormCancel');
   const fma = document.getElementById('seat-form-modelarg'); if (fma) fma.placeholder = t('seatFormModelArgPh');
+  const fbu = document.getElementById('seat-form-baseurl'); if (fbu) fbu.placeholder = t('seatFormBaseUrlPh');
+  const fmod = document.getElementById('seat-form-model'); if (fmod) fmod.placeholder = t('seatFormModelPh');
+  const fake = document.getElementById('seat-form-apikeyenv'); if (fake) fake.placeholder = t('seatFormApiKeyEnvPh');
   if (_seatsData) renderSeatCards();
 }
 
@@ -1374,6 +1408,12 @@ function renderSeatCards() {
   }).join('');
 }
 
+function onAdapterChange() {
+  const adapter = document.getElementById('seat-form-adapter').value;
+  const compatFields = document.getElementById('seat-compat-fields');
+  if (compatFields) compatFields.style.display = adapter === 'openai-compat' ? '' : 'none';
+}
+
 function seatEdit(i) {
   _seatsEditIdx = i;
   const m = _seatsData[i];
@@ -1382,8 +1422,12 @@ function seatEdit(i) {
   document.getElementById('seat-form-adapter').value = m.adapter || 'claude';
   document.getElementById('seat-form-modelarg').value = m.model_arg || '';
   document.getElementById('seat-form-sp').value = m.system_prompt || '';
+  document.getElementById('seat-form-baseurl').value = m.base_url || '';
+  document.getElementById('seat-form-model').value = m.model || '';
+  document.getElementById('seat-form-apikeyenv').value = m.api_key_env || '';
   _renderColorPresets(m.color || SEAT_COLORS[0]);
   _renderEmblemPresets(m.emblem || SEAT_EMBLEMS[0]);
+  onAdapterChange();
   seatFormOpen();
 }
 
@@ -1394,8 +1438,12 @@ function seatAddNew() {
   document.getElementById('seat-form-adapter').value = 'claude';
   document.getElementById('seat-form-modelarg').value = '';
   document.getElementById('seat-form-sp').value = '';
+  document.getElementById('seat-form-baseurl').value = '';
+  document.getElementById('seat-form-model').value = '';
+  document.getElementById('seat-form-apikeyenv').value = '';
   _renderColorPresets(SEAT_COLORS[(_seatsData ? _seatsData.length : 0) % SEAT_COLORS.length]);
   _renderEmblemPresets(SEAT_EMBLEMS[0]);
+  onAdapterChange();
   seatFormOpen();
 }
 
@@ -1428,12 +1476,25 @@ function seatFormConfirm() {
   const sp = document.getElementById('seat-form-sp').value.trim();
   const color = _getSelectedColor();
   const emblem = _getSelectedEmblem();
+  const baseUrl = document.getElementById('seat-form-baseurl').value.trim();
+  const model = document.getElementById('seat-form-model').value.trim();
+  const apiKeyEnv = document.getElementById('seat-form-apikeyenv').value.trim();
 
   if (!name || !id || !adapter) { _showSeatsErr(t('seatsValidErr') + 'name/id/adapter required'); return; }
   if (!/^[a-z0-9\-]{1,32}$/.test(id)) { _showSeatsErr(t('seatsValidErr') + 'id pattern [a-z0-9-]{1,32}'); return; }
   if (sp.length > 2000) { _showSeatsErr(t('seatsValidErr') + 'system_prompt > 2000 chars'); return; }
+  if (adapter === 'openai-compat') {
+    if (!baseUrl || !/^https?:\/\//.test(baseUrl)) { _showSeatsErr(t('seatsValidErr') + 'base_url must start with http:// or https://'); return; }
+    if (!model) { _showSeatsErr(t('seatsValidErr') + 'model required for openai-compat'); return; }
+    if (apiKeyEnv && !/^[A-Z0-9_]{1,64}$/.test(apiKeyEnv)) { _showSeatsErr(t('seatsValidErr') + 'api_key_env must match [A-Z0-9_]{1,64}'); return; }
+  }
 
   const entry = { id, model_display: name, adapter, model_arg: modelArg, color, emblem, system_prompt: sp };
+  if (adapter === 'openai-compat') {
+    entry.base_url = baseUrl;
+    entry.model = model;
+    if (apiKeyEnv) entry.api_key_env = apiKeyEnv;
+  }
 
   if (_seatsEditIdx !== null) {
     _seatsData[_seatsEditIdx] = entry;
@@ -1488,9 +1549,13 @@ async function seatTest(i) {
   const resultEl = document.getElementById(`seat-test-result-${i}`);
   if (!resultEl) return;
   resultEl.textContent = '…';
-  const { status, data } = await apiPost('/api/config/members/test', {
-    adapter: m.adapter, model_arg: m.model_arg || null,
-  });
+  const testBody = { adapter: m.adapter, model_arg: m.model_arg || null };
+  if (m.adapter === 'openai-compat') {
+    testBody.base_url = m.base_url || '';
+    testBody.model = m.model || '';
+    testBody.api_key_env = m.api_key_env || '';
+  }
+  const { status, data } = await apiPost('/api/config/members/test', testBody);
   if (status === 429) {
     resultEl.textContent = t('seatsTestCooldown', data.wait_seconds || '?');
   } else if (status === 200) {

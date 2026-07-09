@@ -4,13 +4,26 @@ To add a provider, add a new key to ADAPTERS and implement a _run_<name> functio
 
 Mock mode: set MOCK_MODE = True (via adapters.set_mock_mode(True)) or
            export AI_PARLIAMENT_MOCK=1 before starting the server.
+
+openai-compat adapter:
+  Accepts any OpenAI-compatible /chat/completions endpoint (Ollama, DeepSeek, GLM, MiniMax, …).
+  Required seat config fields:
+    base_url   — e.g. "http://localhost:11434/v1"
+    model      — model name as the endpoint expects it
+  Optional seat config field:
+    api_key_env — name of the environment variable holding the API key.
+                  If absent or the variable is empty, no Authorization header is sent
+                  (correct for local Ollama). NEVER write the key in config.json.
 """
+import json
 import os
 import re
 import subprocess
 import tempfile
 import time
-from typing import Tuple
+import urllib.error
+import urllib.request
+from typing import Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -28,6 +41,10 @@ ADAPTERS: dict = {
     },
     "gemini": {
         "label": "Gemini",
+        "timeout": 120,
+    },
+    "openai-compat": {
+        "label": "OpenAI-compatible API",
         "timeout": 120,
     },
 }
@@ -74,11 +91,18 @@ def filter_noise(text: str, adapter_name: str) -> str:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def run_adapter(name: str, prompt: str, model_arg: str = None) -> Tuple[bool, str]:
+def run_adapter(
+    name: str,
+    prompt: str,
+    model_arg: str = None,
+    seat_cfg: Optional[dict] = None,
+) -> Tuple[bool, str]:
     """
     Run CLI adapter `name` with `prompt`.
     model_arg (optional, from the member's config entry) selects a specific
     model within the CLI: gemini `-m`, claude `--model`. Codex ignores it.
+    seat_cfg (optional) — the full member config dict; required for
+    'openai-compat' (carries base_url, model, api_key_env).
     Returns (success: bool, text: str).
     On failure text is a human-readable error description (no stack trace).
     """
@@ -90,7 +114,70 @@ def run_adapter(name: str, prompt: str, model_arg: str = None) -> Tuple[bool, st
         return _run_codex(prompt)
     if name == "gemini" or name.startswith("gemini"):
         return _run_gemini(prompt, model_arg)
+    if name == "openai-compat":
+        cfg = seat_cfg or {}
+        return _run_openai_compat(prompt, cfg)
     return False, f"Unknown adapter: {name}"
+
+
+# ---------------------------------------------------------------------------
+# OpenAI-compatible API adapter
+# ---------------------------------------------------------------------------
+
+def _run_openai_compat(prompt: str, seat_cfg: dict) -> Tuple[bool, str]:
+    """
+    POST {base_url}/chat/completions with an OpenAI-compatible request body.
+
+    seat_cfg keys used:
+      base_url    (str, required) — e.g. "http://localhost:11434/v1"
+      model       (str, required) — model name for the endpoint
+      api_key_env (str, optional) — env var name holding the API key.
+                                    If absent or the env var is empty, no
+                                    Authorization header is sent (Ollama-compatible).
+    """
+    base_url = (seat_cfg.get("base_url") or "").rstrip("/")
+    model = (seat_cfg.get("model") or "").strip()
+    api_key_env = (seat_cfg.get("api_key_env") or "").strip()
+
+    if not base_url or not model:
+        return False, "openai-compat: seat config missing base_url or model"
+
+    url = f"{base_url}/chat/completions"
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7,
+    }).encode("utf-8")
+
+    headers = {"Content-Type": "application/json"}
+    if api_key_env:
+        key = os.environ.get(api_key_env, "").strip()
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+
+    timeout = ADAPTERS["openai-compat"]["timeout"]
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+        parsed = json.loads(raw)
+        content = parsed["choices"][0]["message"]["content"]
+        if not isinstance(content, str):
+            content = str(content)
+        return bool(content.strip()), content.strip() or "(empty response)"
+    except urllib.error.HTTPError as e:
+        body_preview = ""
+        try:
+            body_preview = e.read(120).decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        return False, f"openai-compat HTTP {e.code}: {body_preview}"
+    except urllib.error.URLError as e:
+        return False, f"openai-compat connection error: {e.reason}"
+    except TimeoutError:
+        return False, f"openai-compat: timeout after {timeout}s"
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
+        return False, f"openai-compat: unexpected response format — {e}"
 
 
 # ---------------------------------------------------------------------------

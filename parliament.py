@@ -186,9 +186,15 @@ def _run_member(session: dict, label: str, lock: threading.Lock) -> None:
             )
 
     try:
+        # For openai-compat seats, pass the full member config so the adapter
+        # can read base_url, model, and api_key_env.
+        seat_cfg = next(
+            (m for m in members_cfg if m["id"] == member_id), {}
+        ) if adapter_name == "openai-compat" else None
         success, text = adapters.run_adapter(
             adapter_name, prompt,
             model_arg=session["members"][label].get("_model_arg"),
+            seat_cfg=seat_cfg,
         )
     except Exception as exc:
         success, text = False, str(exc)
@@ -374,9 +380,14 @@ def run_followup(
             )
 
     try:
+        # For openai-compat seats, pass the full member config.
+        seat_cfg_fu = next(
+            (m for m in members_cfg if m["id"] == member_id), {}
+        ) if adapter_name == "openai-compat" else None
         success, text = adapters.run_adapter(
             adapter_name, prompt,
             model_arg=session["members"][member].get("_model_arg"),
+            seat_cfg=seat_cfg_fu,
         )
     except Exception as exc:
         success, text = False, str(exc)

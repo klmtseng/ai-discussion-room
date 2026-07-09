@@ -142,10 +142,12 @@ def _config_write_path() -> str:
 # Seat management — validation & test-connection throttle
 # ---------------------------------------------------------------------------
 
-_VALID_ADAPTERS = {"claude", "codex", "gemini"}
+_VALID_ADAPTERS = {"claude", "codex", "gemini", "openai-compat"}
 _ID_RE = re.compile(r"^[a-z0-9\-]{1,32}$")
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _VALID_EMBLEMS = {"star", "knot", "quad", "dot", "moon", "tri"}
+_BASE_URL_RE = re.compile(r"^https?://")
+_API_KEY_ENV_RE = re.compile(r"^[A-Z0-9_]{1,64}$")
 
 # Test-connection global cooldown (60 s, prevents burning quota on rapid clicks)
 _test_cooldown_until: float = 0.0
@@ -186,6 +188,17 @@ def _validate_members(members: list) -> list[str]:
             a = str(adapter)
             if not (a in _VALID_ADAPTERS or a.startswith("claude-") or a.startswith("gemini-")):
                 errors.append(f"{prefix}.adapter: must be one of {sorted(_VALID_ADAPTERS)} or prefixed claude-*/gemini-*")
+            # openai-compat extra fields
+            if a == "openai-compat":
+                bu = str(m.get("base_url") or "").strip()
+                if not bu or not _BASE_URL_RE.match(bu):
+                    errors.append(f"{prefix}.base_url: required for openai-compat, must start with http:// or https://")
+                mdl = str(m.get("model") or "").strip()
+                if not mdl or len(mdl) > 64:
+                    errors.append(f"{prefix}.model: required for openai-compat, max 64 chars")
+                ake = m.get("api_key_env")
+                if ake is not None and not _API_KEY_ENV_RE.match(str(ake)):
+                    errors.append(f"{prefix}.api_key_env: must match [A-Z0-9_]{{1,64}}")
         # color (optional)
         color = m.get("color")
         if color is not None and not _COLOR_RE.match(str(color)):
@@ -455,9 +468,20 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": f"unknown adapter: {adapter_name}"})
                 return
 
+            # For openai-compat, accept seat_cfg from request body
+            seat_cfg = None
+            if adapter_name == "openai-compat":
+                seat_cfg = {
+                    "base_url": data.get("base_url") or "",
+                    "model": data.get("model") or "",
+                    "api_key_env": data.get("api_key_env") or "",
+                }
+
             t0 = time.time()
             test_prompt = "Reply with exactly: SEAT_OK"
-            ok, snippet = adapters.run_adapter(adapter_name, test_prompt, model_arg=model_arg)
+            ok, snippet = adapters.run_adapter(
+                adapter_name, test_prompt, model_arg=model_arg, seat_cfg=seat_cfg
+            )
             latency_ms = int((time.time() - t0) * 1000)
             self._send_json(200, {
                 "ok": ok,
