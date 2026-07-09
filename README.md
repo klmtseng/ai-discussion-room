@@ -136,6 +136,44 @@ they are never sent to the chair AI to preserve anonymisation.
 
 ---
 
+## Seat Management (in-browser UI)
+
+You can add, edit, and delete AI seats without touching any config file.
+
+### How to open
+
+Click the **⚙** button in the top-right HUD (next to the Explore button). A bottom sheet opens with one card per seat.
+
+### Actions per seat card
+
+| Button | What it does |
+|--------|-------------|
+| **Test** | Fires a one-sentence probe ("Reply with exactly: SEAT_OK") at the adapter. Shows latency on success, error snippet on failure. **60-second global cooldown** across all Test clicks (prevents burning quota on rapid taps). |
+| **Edit** | Opens an inline form: Display Name, ID, Adapter, Model Arg, Color (8 presets), Emblem (6 options), System Prompt (≤2000 chars). |
+| **Delete** | Removes the seat from the working list (not saved yet). |
+
+### Adding a new seat
+
+Click **＋ Add Seat** to open the edit form for a blank entry. Fill in the required fields and click OK. Repeat for each new seat.
+
+### Saving
+
+Click **Save** to write the current seat list to `config.json`. The room immediately rebuilds — existing debate sessions are **not** affected (they snapshot the member list at creation time). If a session is running and you add/remove seats, the live session keeps its original member count.
+
+### Validation rules (enforced server-side on Save)
+
+- **2–6 seats** (inclusive)
+- Each seat must have a unique `id` matching `[a-z0-9-]{1,32}`
+- `adapter` must be one of `claude`, `codex`, `gemini`, or use the prefixes `claude-*` / `gemini-*`
+- `color` (if set): `#rrggbb` hex
+- `system_prompt` (if set): ≤2000 characters
+
+### Adding a brand-new provider (Ollama, Mistral, etc.)
+
+The UI only exposes the three built-in adapters. To add an entirely new provider, you must implement a `_run_<name>` function in **`adapters.py`** and register it in the `ADAPTERS` dict. After restarting the server you can use your new adapter name (e.g. `ollama`) in the Seat Management form.
+
+---
+
 ## Language Support (zh / en)
 
 The UI is fully bilingual. All member prompts, chair instructions, and sheet labels switch together.
