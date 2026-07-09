@@ -1831,17 +1831,12 @@ class ParliamentScene extends Phaser.Scene {
       }
     }
 
-    // Walk animation & idle bob for all characters
-    this._walkTick += delta;
     const pc = this._playerCharRef;
 
     if (moved) {
+      // Advance walk frame on each grid step (4 frames cycling)
+      this._playerWalkFrame = (this._playerWalkFrame + 1) % 4;
       this._playerMoving = true;
-      // Advance walk frame (4 frames at 150ms each)
-      if (this._walkTick > 150) {
-        this._playerWalkFrame = (this._playerWalkFrame + 1) % 4;
-        this._walkTick = 0;
-      }
       if (pc && pc.sprite && pc.walkFrames) {
         const frame = pc.walkFrames[this._playerWalkFrame];
         pc.sprite.setFrame(frame);
@@ -1853,13 +1848,12 @@ class ParliamentScene extends Phaser.Scene {
         );
       }
     } else {
-      // Idle: reset to idle frame with gentle bob
+      // Idle: gentle bob animation
       this._playerMoving = false;
-      if (this._walkTick > 120) this._walkTick = 0;
       if (pc && pc.sprite && pc.idleFrame !== undefined) {
         pc.sprite.setFrame(pc.idleFrame);
         const phase = this._idlePhase['player'] || 0;
-        const bobY = Math.round(Math.sin(Date.now() * 0.002 + phase) * SCALE * 0.5);
+        const bobY = Math.round(Math.sin(Date.now() * 0.0025 + phase) * SCALE * 0.5);
         pc.sprite.setPosition(this._px(this._playerCol), this._py(this._playerRow) + bobY);
         if (pc.lt) pc.lt.setPosition(
           this._px(this._playerCol) + TW * SCALE / 2,
@@ -1870,13 +1864,13 @@ class ParliamentScene extends Phaser.Scene {
 
     // Idle bob for member chars (when not in explore mode)
     if (!this._exploreMode) {
-      this._updateIdleBob(delta);
+      this._updateIdleBob();
     }
   }
 
   // Gentle idle head-bob for all seated members
-  _updateIdleBob(delta) {
-    const t = Date.now() * 0.002;
+  _updateIdleBob() {
+    const t = Date.now() * 0.0025;
     for (const label of this._memberLabels) {
       const mc = this._chars[label];
       if (!mc || !mc.sprite) continue;
@@ -1891,7 +1885,7 @@ class ParliamentScene extends Phaser.Scene {
     // Chair char
     const ch = this._chars['chair'];
     if (ch && ch.sprite) {
-      const bobY = Math.round(Math.sin(t) * SCALE * 0.4);
+      const bobY = Math.round(Math.sin(t * 0.8) * SCALE * 0.4);
       ch.sprite.setPosition(this._px(ch.col), this._py(ch.row) + bobY);
       if (ch.lt) ch.lt.setPosition(
         this._px(ch.col) + TW * SCALE / 2,
