@@ -13,8 +13,10 @@ import hmac
 import json
 import os
 import random
+import re
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -93,28 +95,110 @@ def _check_pin(handler: "BaseHTTPRequestHandler") -> bool:
 # ---------------------------------------------------------------------------
 
 _config_cache: dict | None = None
+_config_lock = threading.Lock()
 
 def _load_config() -> dict:
     global _config_cache
-    if _config_cache is not None:
+    with _config_lock:
+        if _config_cache is not None:
+            return _config_cache
+        base = os.path.dirname(os.path.abspath(__file__))
+        # --config <path> override takes highest priority
+        if _CONFIG_PATH_OVERRIDE:
+            path = _CONFIG_PATH_OVERRIDE if os.path.isabs(_CONFIG_PATH_OVERRIDE) \
+                   else os.path.join(base, _CONFIG_PATH_OVERRIDE)
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    _config_cache = json.load(f)
+                return _config_cache
+        for name in ("config.json", "config.example.json"):
+            path = os.path.join(base, name)
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    _config_cache = json.load(f)
+                return _config_cache
+        _config_cache = {}
         return _config_cache
+
+
+def _invalidate_config_cache() -> None:
+    """Force _load_config() to re-read from disk on next call."""
+    global _config_cache
+    with _config_lock:
+        _config_cache = None
+
+
+def _config_write_path() -> str:
+    """Return the path to write config changes. Prefers config.json; falls back to creating it."""
     base = os.path.dirname(os.path.abspath(__file__))
-    # --config <path> override takes highest priority
     if _CONFIG_PATH_OVERRIDE:
-        path = _CONFIG_PATH_OVERRIDE if os.path.isabs(_CONFIG_PATH_OVERRIDE) \
-               else os.path.join(base, _CONFIG_PATH_OVERRIDE)
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                _config_cache = json.load(f)
-            return _config_cache
-    for name in ("config.json", "config.example.json"):
-        path = os.path.join(base, name)
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                _config_cache = json.load(f)
-            return _config_cache
-    _config_cache = {}
-    return _config_cache
+        p = _CONFIG_PATH_OVERRIDE if os.path.isabs(_CONFIG_PATH_OVERRIDE) \
+            else os.path.join(base, _CONFIG_PATH_OVERRIDE)
+        return p
+    return os.path.join(base, "config.json")
+
+
+# ---------------------------------------------------------------------------
+# Seat management — validation & test-connection throttle
+# ---------------------------------------------------------------------------
+
+_VALID_ADAPTERS = {"claude", "codex", "gemini"}
+_ID_RE = re.compile(r"^[a-z0-9\-]{1,32}$")
+_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+_VALID_EMBLEMS = {"star", "knot", "quad", "dot", "moon", "tri"}
+
+# Test-connection global cooldown (60 s, prevents burning quota on rapid clicks)
+_test_cooldown_until: float = 0.0
+_test_cooldown_lock = threading.Lock()
+
+
+def _validate_members(members: list) -> list[str]:
+    """Return list of validation error strings; empty list = valid."""
+    errors: list[str] = []
+    if not isinstance(members, list):
+        return ["members must be a JSON array"]
+    if len(members) < 2:
+        errors.append("members: minimum 2 seats required")
+    if len(members) > 6:
+        errors.append("members: maximum 6 seats allowed")
+    seen_ids: set[str] = set()
+    for i, m in enumerate(members):
+        prefix = f"members[{i}]"
+        if not isinstance(m, dict):
+            errors.append(f"{prefix}: must be an object"); continue
+        # id
+        mid = m.get("id", "")
+        if not mid or not _ID_RE.match(str(mid)):
+            errors.append(f"{prefix}.id: required, pattern [a-z0-9-]{{1,32}}")
+        elif mid in seen_ids:
+            errors.append(f"{prefix}.id: duplicate id '{mid}'")
+        else:
+            seen_ids.add(mid)
+        # model_display
+        md = m.get("model_display", "")
+        if not md or len(str(md)) > 40:
+            errors.append(f"{prefix}.model_display: required, max 40 chars")
+        # adapter
+        adapter = m.get("adapter", "")
+        if not adapter:
+            errors.append(f"{prefix}.adapter: required")
+        else:
+            a = str(adapter)
+            if not (a in _VALID_ADAPTERS or a.startswith("claude-") or a.startswith("gemini-")):
+                errors.append(f"{prefix}.adapter: must be one of {sorted(_VALID_ADAPTERS)} or prefixed claude-*/gemini-*")
+        # color (optional)
+        color = m.get("color")
+        if color is not None and not _COLOR_RE.match(str(color)):
+            errors.append(f"{prefix}.color: must be #rrggbb hex")
+        # emblem (optional)
+        emblem = m.get("emblem")
+        if emblem is not None and str(emblem) not in _VALID_EMBLEMS:
+            errors.append(f"{prefix}.emblem: must be one of {sorted(_VALID_EMBLEMS)}")
+        # system_prompt (optional)
+        sp = m.get("system_prompt")
+        if sp is not None and len(str(sp)) > 2000:
+            errors.append(f"{prefix}.system_prompt: max 2000 chars")
+    return errors
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +260,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Parliament-Pin")
         self.end_headers()
 
@@ -218,6 +302,14 @@ class _Handler(BaseHTTPRequestHandler):
         # API routes — PIN required
         if parts and parts[0] == "api":
             if not self._require_pin():
+                return
+
+            # GET /api/config/members — management: full members array with private fields
+            if parts == ["api", "config", "members"]:
+                cfg = _load_config()
+                import anonymizer as _anon
+                members_raw = _anon.members_from_config(cfg)
+                self._send_json(200, {"members": members_raw})
                 return
 
             # GET /api/config  — read-only: returns member display metadata (locked by PIN)
@@ -339,6 +431,41 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(202, {"status": "running"})
             return
 
+        # POST /api/config/members/test  — test-connect one adapter (throttled 60 s)
+        if parts == ["api", "config", "members", "test"]:
+            global _test_cooldown_until
+            now = time.time()
+            with _test_cooldown_lock:
+                wait = _test_cooldown_until - now
+                if wait > 0:
+                    self._send_json(429, {"error": "cooldown", "wait_seconds": int(wait) + 1})
+                    return
+                _test_cooldown_until = now + 60
+
+            adapter_name = str(data.get("adapter", "")).strip()
+            model_arg = data.get("model_arg") or None
+            if not adapter_name:
+                self._send_json(400, {"error": "adapter required"})
+                return
+
+            # Validate adapter name (same rules as PUT)
+            if not (adapter_name in _VALID_ADAPTERS or
+                    adapter_name.startswith("claude-") or
+                    adapter_name.startswith("gemini-")):
+                self._send_json(400, {"error": f"unknown adapter: {adapter_name}"})
+                return
+
+            t0 = time.time()
+            test_prompt = "Reply with exactly: SEAT_OK"
+            ok, snippet = adapters.run_adapter(adapter_name, test_prompt, model_arg=model_arg)
+            latency_ms = int((time.time() - t0) * 1000)
+            self._send_json(200, {
+                "ok": ok,
+                "latency_ms": latency_ms,
+                "snippet": snippet[:60] if snippet else "",
+            })
+            return
+
         # POST /api/explore/encounter  — deterministic throttle + LLM dialogue
         if parts == ["api", "explore", "encounter"]:
             label_a = (data.get("a") or "").strip().upper()
@@ -366,6 +493,58 @@ class _Handler(BaseHTTPRequestHandler):
                     self._send_json(500, result)
                 return
             self._send_json(200, result)
+            return
+
+        self.send_error(404)
+
+    # -- PUT --
+
+    def do_PUT(self) -> None:
+        parts = self._parts()
+
+        if not self._require_pin():
+            return
+
+        data = self._read_json_body()
+        if data is None:
+            self._send_json(400, {"error": "invalid JSON body"})
+            return
+
+        # PUT /api/config/members  — replace members array, persist config
+        if parts == ["api", "config", "members"]:
+            new_members = data.get("members")
+            if new_members is None:
+                self._send_json(400, {"error": "body must have 'members' key"})
+                return
+            errors = _validate_members(new_members)
+            if errors:
+                self._send_json(400, {"errors": errors})
+                return
+
+            # Load current config, replace only 'members', write back
+            base = os.path.dirname(os.path.abspath(__file__))
+            current_cfg = dict(_load_config())  # shallow copy
+            current_cfg["members"] = new_members
+
+            # Determine write target: if config.json exists use it; else seed from example
+            write_path = _config_write_path()
+            if not os.path.exists(write_path):
+                # Try to seed from example
+                example = os.path.join(base, "config.example.json")
+                if os.path.exists(example):
+                    with open(example, encoding="utf-8") as f:
+                        seed_cfg = json.load(f)
+                    seed_cfg.update(current_cfg)
+                    current_cfg = seed_cfg
+
+            with open(write_path, "w", encoding="utf-8") as f:
+                json.dump(current_cfg, f, ensure_ascii=False, indent=2)
+
+            _invalidate_config_cache()
+            # Return the new members list (re-read from fresh cache)
+            fresh_cfg = _load_config()
+            import anonymizer as _anon
+            self._send_json(200, {"members": _anon.members_from_config(fresh_cfg)})
             return
 
         self.send_error(404)
