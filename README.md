@@ -164,13 +164,77 @@ Click **Save** to write the current seat list to `config.json`. The room immedia
 
 - **2–6 seats** (inclusive)
 - Each seat must have a unique `id` matching `[a-z0-9-]{1,32}`
-- `adapter` must be one of `claude`, `codex`, `gemini`, or use the prefixes `claude-*` / `gemini-*`
+- `adapter` must be one of `claude`, `codex`, `gemini`, `openai-compat`, or use the prefixes `claude-*` / `gemini-*`
 - `color` (if set): `#rrggbb` hex
 - `system_prompt` (if set): ≤2000 characters
 
 ### Adding a brand-new provider (Ollama, Mistral, etc.)
 
-The UI only exposes the three built-in adapters. To add an entirely new provider, you must implement a `_run_<name>` function in **`adapters.py`** and register it in the `ADAPTERS` dict. After restarting the server you can use your new adapter name (e.g. `ollama`) in the Seat Management form.
+For any provider that exposes an OpenAI-compatible `/chat/completions` endpoint, use the built-in **`openai-compat`** adapter — no code changes required (see API Seats section below).
+
+For providers that require a custom protocol, implement a `_run_<name>` function in **`adapters.py`** and register it in the `ADAPTERS` dict. After restarting the server you can use your new adapter name in the Seat Management form.
+
+---
+
+## API Seats (OpenAI-compatible)
+
+Any provider that offers an OpenAI-compatible `/chat/completions` endpoint can be added as a seat without writing any code. Set `"adapter": "openai-compat"` in `config.json`, or use the **OpenAI-compatible API** option in the Seat Management panel.
+
+**Security rule: never write API keys in `config.json`.** Store the key in an environment variable and reference the variable name via `api_key_env`.
+
+### Required fields for `openai-compat` seats
+
+| Field | Required | Description |
+|---|---|---|
+| `base_url` | yes | Endpoint root, e.g. `https://api.deepseek.com`. Must start with `http://` or `https://`. |
+| `model` | yes | Model name the endpoint expects, e.g. `deepseek-chat`. Max 64 chars. |
+| `api_key_env` | no | Environment-variable **name** (not the key itself) holding the Bearer token. If absent or the env var is empty, no `Authorization` header is sent — correct for local Ollama. Pattern: `[A-Z0-9_]{1,64}`. |
+
+### Verified base URLs (queried 2026-07-10)
+
+| Provider | `base_url` | Official source |
+|---|---|---|
+| **Ollama** (local) | `http://localhost:11434/v1` | [docs.ollama.com/api/openai-compatibility](https://docs.ollama.com/api/openai-compatibility) — no API key needed |
+| **DeepSeek** | `https://api.deepseek.com` | [api-docs.deepseek.com](https://api-docs.deepseek.com/) |
+| **GLM / 智谱 bigmodel** | `https://open.bigmodel.cn/api/paas/v4` | [docs.bigmodel.cn/cn/guide/develop/openai/introduction](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction) |
+| **MiniMax** | `https://api.minimax.io/v1` | [platform.minimax.io/docs/api-reference/text-openai-api](https://platform.minimax.io/docs/api-reference/text-openai-api) |
+
+> For any provider not listed, please check the official documentation directly — do not rely on third-party sources.
+
+### Example: Ollama local seat (no key)
+
+```json
+{
+  "id": "ollama-llama",
+  "model_display": "Llama 3 (Ollama)",
+  "adapter": "openai-compat",
+  "base_url": "http://localhost:11434/v1",
+  "model": "llama3",
+  "color": "#60a060",
+  "emblem": "moon"
+}
+```
+
+### Example: DeepSeek seat (API key via env)
+
+```bash
+export DEEPSEEK_API_KEY=sk-xxxxx
+```
+
+```json
+{
+  "id": "deepseek",
+  "model_display": "DeepSeek Chat",
+  "adapter": "openai-compat",
+  "base_url": "https://api.deepseek.com",
+  "model": "deepseek-chat",
+  "api_key_env": "DEEPSEEK_API_KEY",
+  "color": "#4488cc",
+  "emblem": "star"
+}
+```
+
+> **Cost notice**: API seats are billed by the provider at their standard rates. Each parliament session = one API call per seat. The subscription-backed CLI adapters (Claude/ChatGPT/Gemini) are unaffected.
 
 ---
 
