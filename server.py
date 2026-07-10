@@ -148,6 +148,7 @@ _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _VALID_EMBLEMS = {"star", "knot", "quad", "dot", "moon", "tri"}
 _BASE_URL_RE = re.compile(r"^https?://")
 _API_KEY_ENV_RE = re.compile(r"^[A-Z0-9_]{1,64}$")
+_SPRITE_RE = re.compile(r"^[a-z0-9_\-]{1,32}$")
 
 # Test-connection global cooldown (60 s, prevents burning quota on rapid clicks)
 _test_cooldown_until: float = 0.0
@@ -211,6 +212,10 @@ def _validate_members(members: list) -> list[str]:
         sp = m.get("system_prompt")
         if sp is not None and len(str(sp)) > 2000:
             errors.append(f"{prefix}.system_prompt: max 2000 chars")
+        # sprite (optional) — sheet id under assets/sprites/
+        sprite = m.get("sprite")
+        if sprite is not None and not _SPRITE_RE.match(str(sprite)):
+            errors.append(f"{prefix}.sprite: must match [a-z0-9_-]{{1,32}}")
     return errors
 
 

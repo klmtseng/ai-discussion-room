@@ -222,6 +222,28 @@ class TestPutMembersValidation(SeatManagementBase):
             body={"members": members}, pin=self.pin)
         self.assertEqual(status, 200)
 
+    def test_put_valid_sprite_field_accepted(self):
+        """Optional sprite field with valid [a-z0-9_-]{1,32} is accepted."""
+        members = [
+            {"id": "a", "model_display": "Claude", "adapter": "claude", "sprite": "comm1"},
+            {"id": "b", "model_display": "Codex",  "adapter": "codex",  "sprite": "custom_char-2"},
+        ]
+        status, body = self._req("PUT", "/api/config/members",
+            body={"members": members}, pin=self.pin)
+        self.assertEqual(status, 200)
+
+    def test_put_invalid_sprite_field_returns_400(self):
+        """sprite field with disallowed chars (uppercase / path-traversal) is rejected."""
+        members = [
+            {"id": "a", "model_display": "Claude", "adapter": "claude", "sprite": "../../etc/passwd"},
+            {"id": "b", "model_display": "Codex",  "adapter": "codex"},
+        ]
+        status, body = self._req("PUT", "/api/config/members",
+            body={"members": members}, pin=self.pin)
+        self.assertEqual(status, 400)
+        errs = " ".join(body.get("errors", []))
+        self.assertIn("sprite", errs)
+
 
 # ── PUT /api/config/members — persistence & cache invalidation ───────────────
 

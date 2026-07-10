@@ -1909,10 +1909,39 @@ class ParliamentScene extends Phaser.Scene {
     this.load.spritesheet('dungeon', '/assets/tilemap_dungeon.png', {
       frameWidth: 16, frameHeight: 16,
     });
-    // Kenney RPG Urban Pack — 27×18 packed, 16px — walk-cycle characters + interior tiles
+    // Kenney RPG Urban Pack — fallback only (kept for tint path)
     this.load.spritesheet('urban', '/assets/tilemap_urban.png', {
       frameWidth: 16, frameHeight: 16,
     });
+    // Custom baked sprites: load manifest then each sheet
+    this._customSpriteIds = [];
+    this._customSpriteReady = {};
+    fetch('/assets/sprites/manifest.json')
+      .then(r => r.json())
+      .then(manifest => {
+        for (const entry of manifest) {
+          const id = entry.id;
+          const key = `custom_${id}`;
+          this._customSpriteIds.push(id);
+          this._customSpriteReady[id] = false;
+          this.load.spritesheet(key, `/assets/${entry.file}`, {
+            frameWidth: entry.frame_w || 16,
+            frameHeight: entry.frame_h || 16,
+          });
+          this.load.once(`filecomplete-spritesheet-${key}`, () => {
+            this._customSpriteReady[id] = true;
+          });
+          this.load.on('loaderror', (file) => {
+            if (file.key === key) {
+              console.warn(`[sprites] Failed to load ${id}, falling back to urban+tint`);
+            }
+          });
+        }
+        this.load.start();
+      })
+      .catch(err => {
+        console.warn('[sprites] manifest.json load failed, using urban+tint fallback:', err);
+      });
   }
 
   create() {
@@ -2481,8 +2510,8 @@ class ParliamentScene extends Phaser.Scene {
   _buildChairChar() {
     const podCol = Math.floor(COLS / 2);
     const podRow = 3;
-    // Chair: use charIdx 0 (green shirt) with gold tint — distinguished look
-    this._chars['chair'] = this._createUrbanChar(podCol, podRow, 0, 0xffe8a0, '⚖', 'star');
+    // Chair: use custom 'chair' sprite (color baked); fallback to urban+tint
+    this._chars['chair'] = this._createChar(podCol, podRow, 'chair', null, '⚖', 'star', 0xffe8a0);
     this._idlePhase['chair'] = 0;
   }
 
@@ -2491,24 +2520,91 @@ class ParliamentScene extends Phaser.Scene {
     this._playerRow = ROWS - 3;
     this._playerWalkFrame = 0;
     this._playerMoving = false;
-    // Player: use charIdx 5 (dark hair) with warm orange tint
-    this._chars['player'] = this._createUrbanChar(
-      this._playerCol, this._playerRow, 5, 0xe8a030, t('playerLabel'), null);
+    // Player: use custom 'player' sprite (color baked); fallback to urban+tint
+    this._chars['player'] = this._createChar(
+      this._playerCol, this._playerRow, 'player', null, t('playerLabel'), null, 0xe8a030);
     this._playerCharRef = this._chars['player'];
     this._idlePhase['player'] = Math.PI / 3;
   }
 
-  // Create a character using the Kenney Urban Pack walk-cycle sprite
+  // Unified character factory: uses custom baked sprite if available,
+  // falls back to Kenney urban+tint path.
+  // spriteId: key in manifest (e.g. 'player', 'chair', 'comm1')
+  // configColor: Phaser int (used for badge/desk; NOT tint on sprite when custom loaded)
+  // fallbackTint: Phaser int used ONLY on the urban fallback path
+  _createChar(col, row, spriteId, configColor, labelText, emblem, fallbackTint) {
+    const customKey = `custom_${spriteId}`;
+    const useCustom = !!(this._customSpriteReady && this._customSpriteReady[spriteId] &&
+                         this.textures.exists(customKey));
+    if (useCustom) {
+      return this._createCustomChar(col, row, spriteId, customKey, configColor, labelText, emblem);
+    } else {
+      // Fallback: map spriteId to a charIdx for urban pack
+      const fallbackIdx = { player: 5, chair: 0, comm1: 1, comm2: 2, comm3: 3, spare: 4 };
+      const charIdx = fallbackIdx[spriteId] !== undefined ? fallbackIdx[spriteId] : 1;
+      return this._createUrbanChar(col, row, charIdx, fallbackTint, labelText, emblem);
+    }
+  }
+
+  // Create character using a custom 16×16×4-frame baked spritesheet (NO setTint)
+  _createCustomChar(col, row, spriteId, textureKey, configColor, labelText, emblem) {
+    const x = this._px(col);
+    const y = this._py(row);
+    // 4 frames in a single row: 0=idle, 1=walk-left, 2=walk-stride, 3=walk-right
+    const idleFrame = 0;
+    const walkFrames = [0, 1, 2, 3];
+
+    const sprite = this.add.image(x, y, textureKey, idleFrame)
+      .setOrigin(0, 0)
+      .setScale(SCALE)
+      .setDepth(5);
+    // No setTint — color baked into sprite pixels
+
+    // Emblem badge (uses configColor or white)
+    const eg = this.add.graphics().setDepth(6);
+    const badgeColor = configColor || 0xffffff;
+    if (emblem && EMBLEMS[emblem] && labelText) {
+      const bx = x + Math.floor(TW * SCALE / 2) - 5 * SCALE;
+      const by = y - 12 * SCALE;
+      EMBLEMS[emblem](eg, bx, by, badgeColor);
+    }
+
+    // Name label
+    const fontSize = Math.max(8, Math.round(SCALE * 5));
+    const lt = this.add.text(x + TW * SCALE / 2, y - SCALE * 2, labelText || '', {
+      fontSize: `${fontSize}px`, color: '#ffffff', fontFamily: 'monospace', resolution: 2,
+      stroke: '#1a0a04', strokeThickness: 3,
+    }).setOrigin(0.5, 1).setDepth(7);
+    lt.setVisible(!!labelText);
+
+    // Name badge background
+    let badge = null;
+    if (labelText && labelText !== I18N.zh.playerLabel && labelText !== I18N.en.playerLabel) {
+      badge = this.add.graphics().setDepth(6);
+      const bw = Math.max(20, labelText.length * SCALE * 5 + 4);
+      const bh = fontSize + 4;
+      const bx2 = x + TW * SCALE / 2 - bw / 2;
+      const by2 = y - SCALE * 2 - bh;
+      badge.fillStyle(0x1a0a04, 0.7);
+      badge.fillRect(bx2, by2, bw, bh);
+      badge.fillStyle(badgeColor, 0.3);
+      badge.fillRect(bx2, by2, bw, 1);
+    }
+
+    return {
+      col, row, spriteId, charIdx: null, tint: null,
+      walkFrames, idleFrame,
+      sprite, eg, lt, badge,
+      label: labelText,
+    };
+  }
+
+  // Fallback: Create a character using the Kenney Urban Pack walk-cycle sprite
   // charIdx: 0-5 (which urban pack character)
   // tint: optional hex color tint
-  // labelText: name label shown above sprite
-  // emblem: key into EMBLEMS dict (for badge)
   _createUrbanChar(col, row, charIdx, tint, labelText, emblem) {
     const x = this._px(col);
     const y = this._py(row);
-    // Urban pack: 27 cols × 18 rows; chars at cols 23-26, rows = charIdx * 3 + 0..2
-    // Frame index in spritesheet = row * 27 + col
-    // Down-facing idle: charIdx*3+0, cols 23 (idle)
     const idleFrame = (URBAN_CHARS[charIdx % URBAN_CHARS.length]) * 27 + 23;
     const walkFrame1 = (URBAN_CHARS[charIdx % URBAN_CHARS.length]) * 27 + 24;
     const walkFrame2 = (URBAN_CHARS[charIdx % URBAN_CHARS.length]) * 27 + 25;
@@ -2577,13 +2673,16 @@ class ParliamentScene extends Phaser.Scene {
         model_display: m.model_display || label,
         color: m.color || '#5b80ff',
         emblem: m.emblem || 'dot',
+        sprite: m.sprite || null,  // optional custom sprite sheet id
       };
     }
 
     // Rebuild furniture with member data
     this._buildFurniture(this._memberLabels);
 
-    // Urban pack character indices for members (avoid 0=chair, 5=player)
+    // Custom sprite IDs for committee members (cycle if >4 seats)
+    const memberSpritePool = ['comm1', 'comm2', 'comm3', 'spare'];
+    // Urban pack fallback indices (parallel to sprite pool)
     const memberCharIndices = [1, 2, 3, 4, 0, 5];
 
     for (let i = 0; i < this._memberLabels.length; i++) {
@@ -2594,10 +2693,13 @@ class ParliamentScene extends Phaser.Scene {
       const row = dr.row - 1;
       const md = this._memberData[label];
       const intColor = hexToInt(md.color);
-      const charIdx = memberCharIndices[i % memberCharIndices.length];
       // Keep two words so sibling models stay distinguishable
       const shortName = md.model_display.split(' ').slice(0, 2).join(' ');
-      this._chars[label] = this._createUrbanChar(col, row, charIdx, intColor, shortName, md.emblem);
+      // Use per-seat sprite if configured, else cycle through pool
+      const spriteId = md.sprite || memberSpritePool[i % memberSpritePool.length];
+      this._chars[label] = this._createChar(
+        col, row, spriteId, intColor, shortName, md.emblem, intColor
+      );
       this._idlePhase[label] = i * (Math.PI * 2 / Math.max(1, this._memberLabels.length));
     }
 

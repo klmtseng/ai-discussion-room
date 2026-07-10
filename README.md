@@ -178,6 +178,7 @@ Click **Save** to write the current seat list to `config.json`. The room immedia
 - `adapter` must be one of `claude`, `codex`, `gemini`, `openai-compat`, or use the prefixes `claude-*` / `gemini-*`
 - `color` (if set): `#rrggbb` hex
 - `system_prompt` (if set): ≤2000 characters
+- `sprite` (if set): must match `[a-z0-9_-]{1,32}` — drop a 16×16×4-frame PNG into `assets/sprites/` and set this field to use a custom character sprite (generator: `scripts/sprite_forge.py`).
 
 ### Adding a brand-new provider (Ollama, Mistral, etc.)
 
