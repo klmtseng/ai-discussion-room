@@ -384,10 +384,15 @@ class FramePainter:
 
         elif a == "antenna":
             ac = (100, 200, 100, 255)
-            # Antenna from top-left of head upward
-            d.line([(self.HEAD_L+1, ht), (self.HEAD_L-1, ht-2)], fill=ac, width=1)
-            if ht-3 >= 0:
-                d.point([(self.HEAD_L-2, ht-3)], fill=(255, 80, 80, 255))
+            # Antenna from top of head diagonally upward — stays in frame
+            base_x, base_y = self.HEAD_L + 1, ht
+            tip_x  = max(0, base_x - 1)
+            tip_y  = max(0, base_y - 2)
+            d.line([(base_x, base_y), (tip_x, tip_y)], fill=ac, width=1)
+            # Red tip dot — one more step up if room
+            rt_x = max(0, tip_x - 1)
+            rt_y = max(0, tip_y - 1)
+            d.point([(rt_x, rt_y)], fill=(255, 80, 80, 255))
 
 
 # ─── Sprite assembler ─────────────────────────────────────────────────────────
