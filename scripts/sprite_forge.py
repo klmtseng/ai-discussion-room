@@ -1,10 +1,23 @@
 #!/usr/bin/env python3
 """
-sprite_forge.py — Parametric pixel-art character sprite generator
+sprite_forge.py — Parametric pixel-art character sprite generator  v2.0.0
 Outputs: static/assets/sprites/<id>.png  (16×16 × 4 frames, horizontal strip)
          static/assets/sprites/manifest.json
 
 License: CC0 1.0 Universal — Public Domain
+
+v2 art improvements
+-------------------
+1. Head de-blocked: rounded corners (4 corner pixels cut), 1px margin each side,
+   body narrower (5-10) vs head (4-11) → chibi head-big-body-small rhythm.
+2. Warm dark-brown outline (#2a1a10); hair-face border uses darkened hair colour.
+3. Hair hairstyles: bangs reach forehead row 3; mohawk 3px tall ×2px wide;
+   bun has distinct circle; long drapes to shoulder row.
+4. Face: eyes at (6,5)+(9,5) same row, 2px gap; mouth 1px mid-colour dot;
+   glasses = 1px dark frame + skin-colour fill (not solid grey).
+5. Outfit two-tone: main + shadow shade on lower/sides; collar accent dot.
+6. Walk bob: phases 1 & 3 body shifted up 1px; leg swing ≥2px Y delta.
+7. Accessories repositioned to new head shape.
 """
 from __future__ import annotations
 import argparse
@@ -20,7 +33,7 @@ try:
 except ImportError:
     HAS_PIL = False
 
-VERSION = "1.0.0"
+VERSION = "2.0.0"
 FRAME_W = 16
 FRAME_H = 16
 FRAMES  = 4   # idle + 3 walk (facing down)
@@ -46,7 +59,9 @@ HAIR_COLORS = {
     "purple":   (140,  60, 190),
 }
 
-OUTLINE_COLOR = (20, 15, 10, 255)
+# v2: warm dark-brown outline instead of pure black
+OUTLINE_COLOR = (42, 26, 16, 255)   # #2a1a10
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -61,16 +76,24 @@ def rgba(r, g, b, a=255):
     return (r, g, b, a)
 
 
-def blend_accent(accent_rgb: tuple, amount: float = 0.9) -> tuple[int,int,int,int]:
-    """Return accent colour as RGBA."""
-    r, g, b = accent_rgb
-    return (r, g, b, 255)
+def darken(rgb: tuple, amount: int = 40) -> tuple[int, int, int, int]:
+    return tuple(max(0, v - amount) for v in rgb) + (255,)
+
+
+def lighten(rgb: tuple, amount: int = 40) -> tuple[int, int, int, int]:
+    return tuple(min(255, v + amount) for v in rgb) + (255,)
 
 
 # ─── Frame painter (Pillow) ───────────────────────────────────────────────────
 
 class FramePainter:
-    """Draws a single 16×16 character frame using Pillow."""
+    """Draws a single 16×16 character frame using Pillow (v2 art quality)."""
+
+    # Head occupies cols 4-11, rows 2-9  (8×8 block before rounding)
+    # Body occupies cols 5-10, rows 9-12 (narrower = chibi rhythm)
+    HEAD_L, HEAD_R = 4, 11   # inclusive
+    HEAD_T, HEAD_B = 2, 9    # inclusive
+    BODY_L, BODY_R = 5, 10   # 1px narrower each side vs head
 
     def __init__(self, skin: str, hair_style: str, hair_color: str,
                  outfit: str, accent: tuple[int,int,int],
@@ -82,6 +105,8 @@ class FramePainter:
         self.accessory  = accessory
         self.walk_phase = walk_phase  # 0=idle 1=step-L 2=mid 3=step-R
         self.hair_style = hair_style
+        # Bob: frames 1 & 3 shift upper body UP 1px (y−1 in pixel coords)
+        self.bob = -1 if walk_phase in (1, 3) else 0
 
     def render(self) -> "Image.Image":
         img = Image.new("RGBA", (FRAME_W, FRAME_H), (0, 0, 0, 0))
@@ -93,161 +118,276 @@ class FramePainter:
         self._draw_hair(d)
         self._draw_face(d)
         self._draw_accessory(d, img)
+        self._enforce_rounded_corners(img)
         return img
 
-    # ── outline (filled silhouette one pixel larger, drawn first) ──
+    def _enforce_rounded_corners(self, img: "Image.Image"):
+        """Post-process: force the 4 head corner pixels to be transparent."""
+        b  = self.bob
+        corners = [
+            (self.HEAD_L, self.HEAD_T + b),
+            (self.HEAD_R, self.HEAD_T + b),
+            (self.HEAD_L, self.HEAD_B + b),
+            (self.HEAD_R, self.HEAD_B + b),
+        ]
+        for px in corners:
+            x, y = px
+            if 0 <= x < FRAME_W and 0 <= y < FRAME_H:
+                img.putpixel((x, y), (0, 0, 0, 0))
+
+    # ── v2: outline using warm brown, expanded silhouette only on exterior ──
     def _draw_outline(self, d):
         c = OUTLINE_COLOR
-        # body silhouette outline expanded by 1px
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                # head
-                d.rectangle([4+dx, 2+dy, 11+dx, 9+dy], fill=c)
-                # torso
-                d.rectangle([4+dx, 9+dy, 11+dx, 13+dy], fill=c)
+        b = self.bob
+        # Head outline (rounded corner version: rectangle then clear corners)
+        d.rectangle([self.HEAD_L-1, self.HEAD_T-1+b, self.HEAD_R+1, self.HEAD_B+b], fill=c)
+        # Clear the four corner pixels of the outline to round it
+        corners_out = [
+            (self.HEAD_L-1, self.HEAD_T-1+b),
+            (self.HEAD_R+1, self.HEAD_T-1+b),
+            (self.HEAD_L-1, self.HEAD_B+b),
+            (self.HEAD_R+1, self.HEAD_B+b),
+        ]
+        for px in corners_out:
+            if 0 <= px[0] < FRAME_W and 0 <= px[1] < FRAME_H:
+                d.point([px], fill=(0, 0, 0, 0))
+        # Body outline (narrower than head)
+        d.rectangle([self.BODY_L-1, self.HEAD_B+b, self.BODY_R+1, 13], fill=c)
 
     def _draw_body(self, d):
-        # Torso / outfit: rows 9-12, cols 4-11
-        oc = rgba(*self.accent_rgb)
-        # shoulder darker
-        dark = tuple(max(0, v - 40) for v in self.accent_rgb) + (255,)
-        d.rectangle([4, 9, 11, 10], fill=dark)   # shoulder band
-        d.rectangle([4, 10, 11, 13], fill=oc)    # main torso
+        b = self.bob
+        oc   = rgba(*self.accent_rgb)
+        dark = darken(self.accent_rgb, 50)
+        lit  = lighten(self.accent_rgb, 30)
 
-        # Outfit details
+        # Two-tone torso: top/sides darker, main lighter
+        body_t = self.HEAD_B + b   # row 9 (or 8 with bob)
+        body_b = 12 + b            # row 12 (or 11 with bob) — clamp at 13
+        body_b = min(body_b, 13)
+
+        # Main body fill
+        d.rectangle([self.BODY_L, body_t, self.BODY_R, body_b], fill=oc)
+        # Shadow: bottom row + right column darker
+        d.rectangle([self.BODY_L, body_b, self.BODY_R, body_b], fill=dark)
+        d.rectangle([self.BODY_R, body_t, self.BODY_R, body_b], fill=dark)
+
+        # Collar: 1px contrast dot at neck centre
+        collar = lighten(self.accent_rgb, 70)
+        d.point([(7+b, body_t), (8+b, body_t)], fill=collar)
+
+        # Outfit-specific details
         if self.outfit == "robe":
-            # Wide flowing robe — extend sides slightly
-            d.rectangle([3, 9, 12, 13], fill=oc)
-            # robe hem accent
-            lighter = tuple(min(255, v + 50) for v in self.accent_rgb) + (255,)
-            d.line([(3, 13), (12, 13)], fill=lighter, width=1)
+            d.rectangle([self.BODY_L-1, body_t, self.BODY_R+1, body_b], fill=oc)
+            d.rectangle([self.BODY_L-1, body_b, self.BODY_R+1, body_b], fill=dark)
+            d.line([(self.BODY_L-1, body_b), (self.BODY_R+1, body_b)], fill=lit, width=1)
         elif self.outfit == "suit":
-            # Suit: dark lapels + white shirt strip
             lapel = (50, 50, 60, 255)
-            d.line([(7, 9), (7, 13)], fill=lapel, width=1)
-            d.rectangle([7, 9, 8, 13], fill=(230, 225, 215, 255))  # shirt
-            d.rectangle([4, 9, 6, 13], fill=oc)    # left jacket
-            d.rectangle([9, 9, 11, 13], fill=oc)   # right jacket
+            d.rectangle([7, body_t, 8, body_b], fill=(230, 225, 215, 255))
+            d.rectangle([self.BODY_L, body_t, 6, body_b], fill=oc)
+            d.rectangle([9, body_t, self.BODY_R, body_b], fill=oc)
+            d.line([(7, body_t), (7, body_b)], fill=lapel, width=1)
         elif self.outfit == "hoodie":
-            # Hoodie: main body + pocket
-            d.rectangle([4, 9, 11, 13], fill=oc)
-            pock = tuple(max(0, v - 30) for v in self.accent_rgb) + (255,)
-            d.rectangle([6, 11, 9, 13], fill=pock)  # front pocket
+            d.rectangle([self.BODY_L, body_t, self.BODY_R, body_b], fill=oc)
+            pock = darken(self.accent_rgb, 30)
+            pock_t = min(body_t + 2, body_b)
+            d.rectangle([6, pock_t, 9, body_b], fill=pock)
 
-        # Arms (skin)
+        # Arms (skin) — follow bob
         sk = rgba(*self.skin_rgb)
-        d.rectangle([3, 10, 3, 12], fill=sk)   # left arm
-        d.rectangle([12, 10, 12, 12], fill=sk)  # right arm
+        arm_t = body_t + 1
+        arm_b = min(body_t + 3, 13)
+        d.rectangle([self.BODY_L-1, arm_t, self.BODY_L-1, arm_b], fill=sk)
+        d.rectangle([self.BODY_R+1, arm_t, self.BODY_R+1, arm_b], fill=sk)
 
     def _draw_legs(self, d):
-        # Legs at rows 13-15 (bottom 3 rows)
-        sk = rgba(*self.skin_rgb)
-        # pants slightly darker than outfit
-        pant = tuple(max(0, v - 60) for v in self.accent_rgb) + (255,)
-        wp   = self.walk_phase
-
-        # Left leg col 5-6, right leg col 8-9
-        ll_y = 14  # left leg y base
-        rl_y = 14  # right leg y base
-        if wp == 1:   # step-left: left foot forward (higher = lower pixel row)
-            ll_y = 13
-            rl_y = 15
-        elif wp == 3:  # step-right: right foot forward
-            ll_y = 15
-            rl_y = 13
-
-        # Thigh
-        d.rectangle([5, 13, 6, 13], fill=pant)
-        d.rectangle([8, 13, 9, 13], fill=pant)
-        # Shin/foot
-        d.rectangle([5, ll_y, 6, 15], fill=pant)
-        d.rectangle([8, rl_y, 9, 15], fill=pant)
-        # Shoes (dark)
+        pant = darken(self.accent_rgb, 60)
         shoe = (50, 40, 35, 255)
-        if ll_y <= 15:
-            d.rectangle([5, 15, 6, 15], fill=shoe)
-        if rl_y <= 15:
-            d.rectangle([8, 15, 9, 15], fill=shoe)
+        wp   = self.walk_phase
+        # Legs do NOT follow bob — they stay fixed to ground
+        thigh_y = 13
+
+        # Stride: each leg alternates ±1 row for foot position (total 2px delta = visible)
+        ll_y = thigh_y   # left leg foot base
+        rl_y = thigh_y   # right leg foot base
+        if wp == 1:       # step-left: left foot raised (−1), right extended (+1)
+            ll_y = thigh_y - 1
+            rl_y = thigh_y + 1
+        elif wp == 3:     # step-right: right foot raised, left extended
+            ll_y = thigh_y + 1
+            rl_y = thigh_y - 1
+        # wp==0 (idle) and wp==2 (mid) keep both at thigh_y
+
+        # Clamp to frame bounds
+        ll_y = max(thigh_y - 1, min(ll_y, 15))
+        rl_y = max(thigh_y - 1, min(rl_y, 15))
+
+        # Thigh (always at row 13)
+        d.rectangle([5, thigh_y, 6, thigh_y], fill=pant)
+        d.rectangle([8, thigh_y, 9, thigh_y], fill=pant)
+        # Shin/calf
+        if ll_y > thigh_y:
+            d.rectangle([5, thigh_y + 1, 6, ll_y], fill=pant)
+        if rl_y > thigh_y:
+            d.rectangle([8, thigh_y + 1, 9, rl_y], fill=pant)
+        # Shoes — clamped to frame bottom
+        shoe_ll = min(ll_y + 1, 15)
+        shoe_rl = min(rl_y + 1, 15)
+        d.rectangle([5, shoe_ll, 6, shoe_ll], fill=shoe)
+        d.rectangle([8, shoe_rl, 9, shoe_rl], fill=shoe)
 
     def _draw_head(self, d):
         sk = rgba(*self.skin_rgb)
-        # Head: 8×8 centred at cols 4-11, rows 2-9
-        d.rectangle([4, 2, 11, 9], fill=sk)
+        b  = self.bob
+        # Draw filled head rect
+        d.rectangle([self.HEAD_L, self.HEAD_T+b, self.HEAD_R, self.HEAD_B+b], fill=sk)
+        # v2: cut the 4 corner pixels → rounded silhouette
+        corners = [
+            (self.HEAD_L, self.HEAD_T+b),
+            (self.HEAD_R, self.HEAD_T+b),
+            (self.HEAD_L, self.HEAD_B+b),
+            (self.HEAD_R, self.HEAD_B+b),
+        ]
+        for px in corners:
+            if 0 <= px[0] < FRAME_W and 0 <= px[1] < FRAME_H:
+                d.point([px], fill=(0, 0, 0, 0))
 
     def _draw_hair(self, d):
-        hc = rgba(*self.hair_rgb)
-        hs = self.hair_style
+        hc      = rgba(*self.hair_rgb)
+        hc_dark = darken(self.hair_rgb, 35)   # hair-face border shade
+        hs      = self.hair_style
+        b       = self.bob
+
+        # Head geometry (with bob offset)
+        ht = self.HEAD_T + b   # top of head
+        hb = self.HEAD_B + b   # bottom of head
 
         if hs == "short":
-            # Short — top 2 rows of head
-            d.rectangle([4, 2, 11, 3], fill=hc)
-            d.point([(4, 4), (11, 4)], fill=hc)  # sideburn dots
+            # Top 2 rows of head (rows ht, ht+1) = fringe reaching row ht+1
+            d.rectangle([self.HEAD_L, ht, self.HEAD_R, ht+1], fill=hc)
+            # Hair-skin boundary: row ht+2 sidecols use dark hair shade
+            d.point([(self.HEAD_L, ht+2), (self.HEAD_R, ht+2)], fill=hc_dark)
+            # Sideburn dots at ear rows
+            d.point([(self.HEAD_L, ht+3), (self.HEAD_R, ht+3)], fill=hc_dark)
+
         elif hs == "long":
-            # Long — top + sides flow past face
-            d.rectangle([4, 2, 11, 3], fill=hc)
-            d.rectangle([3, 3, 4, 8], fill=hc)   # left drape
-            d.rectangle([11, 3, 12, 8], fill=hc)  # right drape
+            # Top 2 rows + side curtains reaching shoulder
+            d.rectangle([self.HEAD_L, ht, self.HEAD_R, ht+1], fill=hc)
+            # Bangs: row ht+2 fully to show fringe over forehead
+            d.rectangle([self.HEAD_L+1, ht+2, self.HEAD_R-1, ht+2], fill=hc)
+            d.point([(self.HEAD_L, ht+2), (self.HEAD_R, ht+2)], fill=hc_dark)
+            # Side drapes: 2px wide, reaching row hb+1 (shoulder)
+            d.rectangle([self.HEAD_L-1, ht+1, self.HEAD_L, hb+1], fill=hc)
+            d.rectangle([self.HEAD_R, ht+1, self.HEAD_R+1, hb+1], fill=hc)
+
         elif hs == "curly":
-            # Curly — bumpy top
-            d.rectangle([4, 2, 11, 3], fill=hc)
+            # Bumpy top — top row + bumps at ht-1
+            d.rectangle([self.HEAD_L, ht, self.HEAD_R, ht+1], fill=hc)
             for cx in [4, 6, 8, 10]:
-                d.rectangle([cx, 1, cx+1, 2], fill=hc)
+                if 0 <= ht-1 < FRAME_H:
+                    d.rectangle([cx, ht-1, cx+1, ht], fill=hc)
+            d.point([(self.HEAD_L, ht+2), (self.HEAD_R, ht+2)], fill=hc_dark)
+
         elif hs == "bald":
-            # Bald — just a small fringe
-            pass  # no hair drawn
+            # Subtle highlight — no drawn hair
+            pass
+
         elif hs == "bun":
-            # Bun — short sides, small circle on top
-            d.rectangle([5, 3, 10, 3], fill=hc)  # sides
-            d.rectangle([7, 1, 9, 2], fill=hc)   # bun
+            # Short back-sides + distinct circle bun on top
+            d.rectangle([self.HEAD_L+1, ht+1, self.HEAD_R-1, ht+1], fill=hc)
+            # Bun: 3×2 solid rectangle sitting above head top
+            bun_row = max(ht - 2, 0)
+            d.rectangle([6, bun_row, 9, ht], fill=hc)
+            d.point([(self.HEAD_L, ht+2), (self.HEAD_R, ht+2)], fill=hc_dark)
+
         elif hs == "mohawk":
-            # Mohawk — strip down centre
-            d.rectangle([7, 0, 8, 3], fill=hc)
+            # v2: centre strip 2px wide, 3px tall above head top
+            for row in range(max(ht-3, 0), ht+1):
+                d.rectangle([7, row, 8, row], fill=hc)
+            d.point([(self.HEAD_L, ht+1), (self.HEAD_R, ht+1)], fill=hc_dark)
+
         else:
             # fallback = short
-            d.rectangle([4, 2, 11, 3], fill=hc)
+            d.rectangle([self.HEAD_L, ht, self.HEAD_R, ht+1], fill=hc)
+            d.point([(self.HEAD_L, ht+2), (self.HEAD_R, ht+2)], fill=hc_dark)
 
     def _draw_face(self, d):
-        # Eyes: two dots at row 5, cols 6 and 9
+        b    = self.bob
+        ht   = self.HEAD_T + b   # top of head row
+
+        # Eyes: 1px dark dots at same row (row ht+3), cols 6 & 9, separated by 2px
+        eye_row = ht + 3
         eye_col = (30, 25, 20, 255)
-        d.point([(6, 5), (9, 5)], fill=eye_col)
-        # Pupils highlight
-        d.point([(6, 4), (9, 4)], fill=(255, 255, 255, 180))
-        # Simple mouth: one pixel at row 7, col 7-8
-        d.point([(7, 7), (8, 7)], fill=(180, 100, 80, 200))
+        d.point([(6, eye_row), (9, eye_row)], fill=eye_col)
+        # Subtle highlight pixel above each eye
+        if eye_row - 1 >= 0:
+            d.point([(6, eye_row-1), (9, eye_row-1)], fill=(255, 255, 255, 100))
+
+        # Mouth: 1px, lighter tone (not black) at row ht+5
+        mouth_row = ht + 5
+        sk  = self.skin_rgb
+        # mid-tone between skin and a warm brown — visually subtle
+        mouth_col = (
+            max(0, sk[0] - 30),
+            max(0, sk[1] - 40),
+            max(0, sk[2] - 30),
+            200,
+        )
+        if 0 <= mouth_row < FRAME_H:
+            d.point([(7, mouth_row), (8, mouth_row)], fill=mouth_col)
 
     def _draw_accessory(self, d, img):
         if not self.accessory or self.accessory == "none":
             return
-        a = self.accessory
+        a  = self.accessory
+        b  = self.bob
+        ht = self.HEAD_T + b
+        hb = self.HEAD_B + b
+
         if a == "glasses":
-            gc = (60, 60, 70, 220)
-            # Two small squares around eyes
-            d.rectangle([5, 4, 7, 6], outline=gc)
-            d.rectangle([8, 4, 10, 6], outline=gc)
-            d.line([(7, 5), (8, 5)], fill=gc, width=1)  # bridge
+            # v2: 1px dark frame around eye positions, skin-coloured fill
+            gc = (60, 40, 20, 230)    # warm dark frame
+            sk = rgba(*self.skin_rgb)
+            eye_row = ht + 3
+            # Left lens frame
+            d.rectangle([5, eye_row-1, 7, eye_row+1], outline=gc)
+            # Left lens fill (skin inside — eye will be overdrawn on top)
+            d.rectangle([6, eye_row, 6, eye_row], fill=sk)
+            # Right lens frame
+            d.rectangle([8, eye_row-1, 10, eye_row+1], outline=gc)
+            d.rectangle([9, eye_row, 9, eye_row], fill=sk)
+            # Bridge connecting lenses
+            d.point([(7, eye_row), (8, eye_row)], fill=gc)
+            # Re-draw eyes on top of glasses fill
+            d.point([(6, eye_row), (9, eye_row)], fill=(30, 25, 20, 255))
+
         elif a == "headphones":
-            hc = (80, 80, 200, 255)
+            hpc = (80, 80, 200, 255)
             # Arc over head
-            d.arc([4, 1, 11, 6], start=200, end=340, fill=hc, width=2)
-            # Ear cups
-            d.rectangle([3, 4, 4, 6], fill=hc)
-            d.rectangle([11, 4, 12, 6], fill=hc)
+            d.arc([self.HEAD_L, ht-1, self.HEAD_R, ht+4+b], start=200, end=340,
+                  fill=hpc, width=2)
+            # Ear cups at side of head
+            d.rectangle([self.HEAD_L-1, ht+2, self.HEAD_L, ht+4], fill=hpc)
+            d.rectangle([self.HEAD_R,   ht+2, self.HEAD_R+1, ht+4], fill=hpc)
+
         elif a == "tie":
             tc = (180, 30, 30, 255)
-            # Tie strip from chin to mid-torso
-            d.line([(7, 8), (7, 12)], fill=tc, width=1)
-            d.rectangle([6, 9, 8, 10], fill=tc)  # knot
+            neck_row = hb + b
+            d.line([(7, neck_row), (7, 12)], fill=tc, width=1)
+            d.rectangle([6, neck_row, 8, neck_row+1], fill=tc)  # knot
+
         elif a == "bow":
             bc = (220, 60, 120, 255)
-            # Bow at chin/collar
-            d.rectangle([5, 8, 6, 9], fill=bc)
-            d.rectangle([9, 8, 10, 9], fill=bc)
-            d.point([(7, 8), (8, 8)], fill=bc)
+            neck_row = hb + b
+            d.rectangle([5, neck_row, 6, neck_row+1], fill=bc)
+            d.rectangle([9, neck_row, 10, neck_row+1], fill=bc)
+            d.point([(7, neck_row), (8, neck_row)], fill=bc)
+
         elif a == "antenna":
-            # Single-side antenna (left side of head)
             ac = (100, 200, 100, 255)
-            d.line([(5, 2), (3, 0)], fill=ac, width=1)
-            d.point([(3, 0)], fill=(255, 80, 80, 255))  # red tip
+            # Antenna from top-left of head upward
+            d.line([(self.HEAD_L+1, ht), (self.HEAD_L-1, ht-2)], fill=ac, width=1)
+            if ht-3 >= 0:
+                d.point([(self.HEAD_L-2, ht-3)], fill=(255, 80, 80, 255))
 
 
 # ─── Sprite assembler ─────────────────────────────────────────────────────────
@@ -316,9 +456,9 @@ def generate_preset_batch(out_dir: Path) -> list[dict]:
         # Save sprite
         out_path = out_dir / f"{cid}.png"
         strip.save(str(out_path), "PNG")
-        # Save preview
+        # Save preview (v2 tag)
         prev = make_preview(strip, 8)
-        prev.save(f"/tmp/preview_{cid}.png", "PNG")
+        prev.save(f"/tmp/preview2_{cid}.png", "PNG")
         records.append({
             "id":          cid,
             "file":        f"sprites/{cid}.png",
@@ -353,65 +493,82 @@ def save_manifest(path: Path, records: list):
     print(f"  manifest saved → {path}")
 
 
-# ─── Self-test ────────────────────────────────────────────────────────────────
+# ─── Self-test (v2 extended) ──────────────────────────────────────────────────
 
 def selftest(out_dir: Path):
-    import tempfile, io
+    import tempfile
     errors = []
 
-    # 1. Generate a test sprite
     accent = (200, 80, 40)
     strip  = make_sprite("tan", "short", "brown", "hoodie", accent, "glasses")
 
-    # 2. Check size
+    # 1. Size
     assert strip.size == (FRAME_W * FRAMES, FRAME_H), \
-        f"Bad size: {strip.size} expected {(FRAME_W * FRAMES, FRAME_H)}"
+        f"Bad size: {strip.size}"
 
-    # 3. Check transparent background (corner pixels)
-    corners = [(0, 0), (FRAME_W * FRAMES - 1, 0), (0, FRAME_H - 1)]
-    for px in corners:
+    # 2. Transparent corners (top-left of frame 0, top-right of frame 3, bottom-left)
+    corner_checks = [
+        (0, 0),
+        (FRAME_W * FRAMES - 1, 0),
+        (0, FRAME_H - 1),
+        (1, 0),                          # near-corner also transparent
+        (FRAME_W * FRAMES - 2, 0),
+    ]
+    for px in corner_checks:
         pv = strip.getpixel(px)
-        assert pv[3] == 0, f"Corner {px} not transparent: {pv}"
+        assert pv[3] == 0, f"Corner-region {px} not transparent: {pv}"
 
-    # 4. Check walk frames differ (leg pixels should differ between phase 0 and phase 1)
+    # 3. Frames differ (idle vs walk-1)
     frame0 = strip.crop((0, 0, FRAME_W, FRAME_H))
     frame1 = strip.crop((FRAME_W, 0, FRAME_W * 2, FRAME_H))
     assert frame0.tobytes() != frame1.tobytes(), "Idle and walk-1 frames are identical!"
 
-    # 5. Skin pixels must NOT equal the accent colour
+    # 4. Skin zone does not contain accent colour
     accent_rgba = accent + (255,)
-    pixels = list(strip.getdata())
     skin_rgb = SKIN_TONES["tan"]
-    skin_conflict = [p for p in pixels if p == accent_rgba and
-                     abs(p[0] - skin_rgb[0]) + abs(p[1] - skin_rgb[1]) + abs(p[2] - skin_rgb[2]) < 30]
-    # We test that the skin region doesn't contain accent colour:
-    # Skin zone = head cols 4-11, rows 2-9 in frame 0
-    skin_zone_cols = range(4, 12)
-    skin_zone_rows = range(2, 10)
-    for row in skin_zone_rows:
-        for col in skin_zone_cols:
+    for row in range(3, 9):        # rows 3-8 = inner face rows (below hair)
+        for col in range(5, 11):   # inner head columns (inside corners)
             px = frame0.getpixel((col, row))
             if px[3] > 0:
                 assert px[:3] != accent, \
-                    f"Skin zone pixel at ({col},{row}) has accent colour {px}"
+                    f"Skin zone ({col},{row}) has accent colour {px}"
 
-    # 6. Check 4 frames
-    assert strip.width == FRAME_W * FRAMES, "Wrong number of frames"
+    # 5. Four frames
+    assert strip.width == FRAME_W * FRAMES
 
-    # 7. Write to temp file and reload
+    # 6. v2: Head rounded corners are transparent (frame 0)
+    head_corners = [(4, 2), (11, 2), (4, 9), (11, 9)]
+    for px in head_corners:
+        pv = frame0.getpixel(px)
+        assert pv[3] == 0, f"Head corner {px} should be transparent (rounded): {pv}"
+
+    # 7. v2: Walk-phase 1 and 3 have body shifted (bob) — they differ from phase 2
+    frame2 = strip.crop((FRAME_W*2, 0, FRAME_W*3, FRAME_H))
+    frame3 = strip.crop((FRAME_W*3, 0, FRAME_W*4, FRAME_H))
+    assert frame1.tobytes() != frame2.tobytes(), "Walk frames 1 and 2 must differ (bob)"
+    assert frame3.tobytes() != frame2.tobytes(), "Walk frames 3 and 2 must differ (bob)"
+
+    # 8. v2: Leg y-positions differ between phase 1 and phase 3 (stride swing)
+    # Check lower half for differences
+    leg_row_1 = [frame1.getpixel((c, r)) for r in range(12, 16) for c in range(5, 10)]
+    leg_row_3 = [frame3.getpixel((c, r)) for r in range(12, 16) for c in range(5, 10)]
+    assert leg_row_1 != leg_row_3, "Phase 1 and phase 3 leg pixels must differ (stride)"
+
+    # 9. Reload from disk
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
         strip.save(tf.name, "PNG")
         reloaded = Image.open(tf.name)
         assert reloaded.mode == "RGBA"
         assert reloaded.size == strip.size
 
-    print("selftest PASS — size OK, transparent BG OK, frames differ, skin != accent, 4 frames")
+    print("selftest PASS — size OK, transparent BG OK, rounded corners OK, "
+          "frames differ, bob OK, stride swing OK, skin != accent, 4 frames")
 
 
 # ─── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Parametric pixel-art sprite generator")
+    parser = argparse.ArgumentParser(description="Parametric pixel-art sprite generator v2")
     parser.add_argument("--id",          default=None, help="Output ID (filename stem)")
     parser.add_argument("--skin",        default="tan",
                         choices=list(SKIN_TONES.keys()), help="Skin tone")
@@ -444,7 +601,7 @@ def main():
         return
 
     if args.preset_batch:
-        print("Generating preset batch…")
+        print("Generating preset batch (v2)…")
         records = generate_preset_batch(out_dir)
         save_manifest(manifest_path, records)
         return
@@ -457,17 +614,16 @@ def main():
     outfit_name, accent    = parse_outfit(args.outfit)
     acc = args.accessory if args.accessory and args.accessory != "none" else None
 
-    strip   = make_sprite(args.skin, hair_style, hair_color, outfit_name, accent, acc)
+    strip    = make_sprite(args.skin, hair_style, hair_color, outfit_name, accent, acc)
     out_path = out_dir / f"{args.id}.png"
     strip.save(str(out_path), "PNG")
     prev = make_preview(strip, 8)
-    prev.save(f"/tmp/preview_{args.id}.png", "PNG")
+    prev.save(f"/tmp/preview2_{args.id}.png", "PNG")
     print(f"Saved: {out_path}")
-    print(f"Preview: /tmp/preview_{args.id}.png")
+    print(f"Preview: /tmp/preview2_{args.id}.png")
 
     # Update manifest
     records = load_manifest(manifest_path)
-    # Remove old entry if exists
     records = [r for r in records if r.get("id") != args.id]
     records.append({
         "id":          args.id,

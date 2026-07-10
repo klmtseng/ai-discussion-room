@@ -12,7 +12,7 @@
     "outfit": "hoodie:#3a7bd5",
     "accessory": "none",
     "license": "CC0 1.0 Universal",
-    "generator": "sprite_forge.py v1.0.0"
+    "generator": "sprite_forge.py v2.0.0"
   },
   {
     "id": "chair",
@@ -27,7 +27,7 @@
     "outfit": "robe:#1a1a2e",
     "accessory": "glasses",
     "license": "CC0 1.0 Universal",
-    "generator": "sprite_forge.py v1.0.0"
+    "generator": "sprite_forge.py v2.0.0"
   },
   {
     "id": "comm1",
@@ -42,7 +42,7 @@
     "outfit": "robe:#e07830",
     "accessory": "none",
     "license": "CC0 1.0 Universal",
-    "generator": "sprite_forge.py v1.0.0"
+    "generator": "sprite_forge.py v2.0.0"
   },
   {
     "id": "comm2",
@@ -57,7 +57,7 @@
     "outfit": "robe:#10b8a0",
     "accessory": "headphones",
     "license": "CC0 1.0 Universal",
-    "generator": "sprite_forge.py v1.0.0"
+    "generator": "sprite_forge.py v2.0.0"
   },
   {
     "id": "comm3",
@@ -72,7 +72,7 @@
     "outfit": "robe:#8060e8",
     "accessory": "bow",
     "license": "CC0 1.0 Universal",
-    "generator": "sprite_forge.py v1.0.0"
+    "generator": "sprite_forge.py v2.0.0"
   },
   {
     "id": "spare",
@@ -87,6 +87,6 @@
     "outfit": "suit:#2d6a4f",
     "accessory": "antenna",
     "license": "CC0 1.0 Universal",
-    "generator": "sprite_forge.py v1.0.0"
+    "generator": "sprite_forge.py v2.0.0"
   }
 ]
