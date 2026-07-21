@@ -1,13 +1,16 @@
 # AI 討論室 (AI Discussion Room)
 
-The only multi-LLM deliberation chamber that runs on your existing
-Claude / ChatGPT / Gemini **subscriptions** (zero API cost, bring-your-own-subscription)
-and lets you walk around a pixel JRPG parliament while the members deliberate.
+Ask different AIs the same question, then merge the answers yourself — that
+integration step is a chore. So we built the AIs a pixel parliament where they
+actually hold the meeting.
 
-Ask one question, get answers from all members simultaneously, then a chair AI
-synthesises consensus, disagreements, and a conclusion — with the members
-**structurally anonymised** to the chair (no brand token can reach it), so the
-synthesis can't play favourites. No API keys, no vendor lock-in. MIT.
+Ask once: all members answer in parallel, then a chair AI synthesises consensus,
+disagreements, and a conclusion — with the members **structurally anonymised** to
+the chair (no brand token can reach it), so the synthesis can't play favourites.
+Runs on your existing Claude / ChatGPT **subscriptions** via official CLIs
+(Gemini uses its free API-key tier) — zero API cost, bring-your-own-subscription,
+no vendor lock-in, and you can walk around the pixel JRPG chamber while they
+deliberate. MIT.
 
 ## Credits & Lineage
 
